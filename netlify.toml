@@ -1,0 +1,7 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_MENU_URL = "https://rusticpub.netlify.app"
