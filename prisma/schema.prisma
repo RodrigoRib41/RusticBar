@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ReservationStatus {
+  pending
+  confirmed
+}
+
+model Reservation {
+  id              String            @id @default(uuid()) @db.Uuid
+  name            String
+  phone           String
+  date            DateTime          @default(dbgenerated("CURRENT_DATE")) @db.Date
+  people          Int
+  status          ReservationStatus @default(confirmed)
+  token           String?           @unique
+  tokenExpiration DateTime?
+  createdAt       DateTime          @default(now())
+
+  @@index([date])
+  @@index([phone])
+  @@index([status])
+  @@index([status, date])
+  @@index([tokenExpiration])
+}

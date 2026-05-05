@@ -1,4 +1,15 @@
-const menuUrl = process.env.NEXT_PUBLIC_MENU_URL ?? "http://localhost:3000";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Rustic Pub | QR del menu",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_MENU_URL ?? "http://localhost:3000";
+const menuUrl = new URL("/menu-qr", siteUrl).toString();
 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
   menuUrl,
 )}`;

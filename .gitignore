@@ -3,9 +3,13 @@ node_modules
 out
 dist
 dev-*.log
+responsive-check/
+.env
 .env*.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .vercel
 .netlify
+
+/app/generated/prisma

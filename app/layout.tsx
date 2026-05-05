@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rustic PUB | Menu",
-  description: "Menu digital de Rustic PUB",
+  title: "Rustic Pub | Reservas",
+  description: "Reservas online para Rustic Pub",
 };
 
 export default function RootLayout({

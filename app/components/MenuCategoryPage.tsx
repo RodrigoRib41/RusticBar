@@ -3,12 +3,13 @@ import { MenuSection, menuSections } from "../menu-data";
 
 type MenuCategoryPageProps = {
   section: MenuSection;
+  basePath?: string;
 };
 
-export function MenuCategoryPage({ section }: MenuCategoryPageProps) {
+export function MenuCategoryPage({ section, basePath = "/menu-qr" }: MenuCategoryPageProps) {
   return (
     <main className="menu-page">
-      <Header />
+      <Header basePath={basePath} />
       <section className="category-hero">
         <p className="eyebrow">Rustic PUB</p>
         <h1>{section.title}</h1>
@@ -16,7 +17,7 @@ export function MenuCategoryPage({ section }: MenuCategoryPageProps) {
       </section>
 
       <section className="menu-shell menu-shell--compact" aria-label={section.title}>
-        <CategoryNav activeSlug={section.slug} />
+        <CategoryNav activeSlug={section.slug} basePath={basePath} />
         <nav className="subcat-nav" aria-label={`Categorias de ${section.title}`}>
           {section.groups.map((group) => (
             <a href={`#${toAnchor(group.title)}`} key={group.title}>
@@ -58,10 +59,10 @@ export function MenuCategoryPage({ section }: MenuCategoryPageProps) {
   );
 }
 
-export function Header() {
+export function Header({ basePath = "/menu-qr" }: { basePath?: string }) {
   return (
     <header className="topbar" aria-label="Encabezado de Rustic PUB">
-      <Link href="/" className="brand">
+      <Link href={basePath} className="brand">
         <span className="brand__seal">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-rustic.png" alt="" />
@@ -75,13 +76,19 @@ export function Header() {
   );
 }
 
-export function CategoryNav({ activeSlug }: { activeSlug?: MenuSection["slug"] }) {
+export function CategoryNav({
+  activeSlug,
+  basePath = "/menu-qr",
+}: {
+  activeSlug?: MenuSection["slug"];
+  basePath?: string;
+}) {
   return (
     <nav className="category-nav" aria-label="Categorias del menu">
       {menuSections.map((section) => (
         <Link
           aria-current={activeSlug === section.slug ? "page" : undefined}
-          href={`/${section.slug}`}
+          href={`${basePath}/${section.slug}`}
           key={section.slug}
         >
           {section.title}
