@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { AuthSessionProvider } from "./components/AuthSessionProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rustic Pub | Reservas",
-  description: "Reservas online para Rustic Pub",
+  title: "Rustic Pub | Reserva",
+  description: "Reserva online para Rustic Pub",
 };
 
 export default function RootLayout({
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        <AuthSessionProvider>{children}</AuthSessionProvider>
+      </body>
     </html>
   );
 }

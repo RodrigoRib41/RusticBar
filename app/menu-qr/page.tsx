@@ -1,65 +1,30 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { CategoryNav, Header } from "../components/MenuCategoryPage";
-import { getSectionCover, menuSections } from "../menu-data";
+import { MenuQrOrderApp } from "./MenuQrOrderApp";
+import { getOrderProducts } from "./order-products";
+import { getTableByToken } from "../../lib/tables";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Rustic Pub | Menu QR",
-  description: "Menu digital privado de Rustic Pub",
+  title: "Rustic Pub | Pedidos QR",
+  description: "Pedidos por mesa de Rustic Pub",
   robots: {
     index: false,
     follow: false,
   },
 };
 
-export default function MenuQrPage() {
-  return (
-    <main className="menu-page">
-      <Header />
+type MenuQrPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-      <section className="hero">
-        <div className="hero__content">
-          <div className="logo-lockup">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-rustic.png" alt="Rustic PUB" />
-          </div>
-          <p className="hero__copy">
-            Cocina de pub, tragos de barra y platos para compartir sin vueltas.
-          </p>
-          <div className="hero__actions">
-            <a href="#menu" className="button button--primary">
-              Ver menu
-            </a>
-          </div>
-        </div>
-      </section>
+export default async function MenuQrPage({ searchParams }: MenuQrPageProps) {
+  const params = await searchParams;
+  const tokenParam = Array.isArray(params.token) ? params.token[0] : params.token;
+  const [products, table] = await Promise.all([
+    getOrderProducts(),
+    tokenParam ? getTableByToken(tokenParam) : Promise.resolve(null),
+  ]);
 
-      <section id="menu" className="menu-shell" aria-label="Menu de Rustic PUB">
-        <CategoryNav />
-
-        <div className="section-heading">
-          <p className="eyebrow">Carta</p>
-          <h2>Elegi tu seccion</h2>
-        </div>
-
-        <div className="category-grid">
-          {menuSections.map((section) => (
-            <Link className="category-card" href={`/menu-qr/${section.slug}`} key={section.slug}>
-              <div className="category-card__image">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={getSectionCover(section)} alt={section.title} />
-              </div>
-              <div className="category-card__body">
-                <div>
-                  <h3>{section.title}</h3>
-                  <p>{section.note}</p>
-                </div>
-                <span>Ver {section.title.toLowerCase()}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
+  return <MenuQrOrderApp products={products} table={table} />;
 }

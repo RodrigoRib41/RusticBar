@@ -3,7 +3,7 @@ import { isAdminRequest } from "../../../../../lib/admin-auth";
 import {
   ReservationError,
   deleteReservation,
-  parseUpdateReservationInput,
+  parseUpdateAdminReservationInput,
   updateReservation,
 } from "../../../../../lib/reservations";
 
@@ -21,8 +21,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const input = parseUpdateReservationInput(await request.json());
-    const result = await updateReservation(id, input);
+    const input = parseUpdateAdminReservationInput(await request.json());
+    const result = await updateReservation(id, input, { requirePhone: false });
 
     return NextResponse.json(result);
   } catch (error) {

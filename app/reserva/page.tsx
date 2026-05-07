@@ -1,27 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SiteFooter } from "../components/SiteFooter";
 import { getAvailability, getTodayDateString } from "../../lib/reservations";
 import { ReservationFlow, type Availability } from "./ReservationFlow";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Rustic Pub | Reservas",
+  title: "Rustic Pub | Reserva",
   description: "Reserva tu mesa en Rustic Pub",
   alternates: {
-    canonical: "/reservas",
+    canonical: "/reserva",
   },
 };
 
+const fallbackDate = getTodayDateString();
+const fallbackEnabledDayIndexes = [0, 4, 5, 6];
+const fallbackIsReservationDayEnabled = isReservationDayEnabled(fallbackDate);
+const fallbackCapacity = fallbackIsReservationDayEnabled ? 40 : 0;
 const fallbackAvailability: Availability = {
-  capacity: 40,
-  date: getTodayDateString(),
+  capacity: fallbackCapacity,
+  date: fallbackDate,
   reserved: 0,
-  available: 40,
+  available: fallbackCapacity,
+  dayLabel: fallbackDayLabel(fallbackDate),
+  enabledDayIndexes: fallbackEnabledDayIndexes,
+  isHabitualOpenDay: fallbackIsReservationDayEnabled,
+  isReservationDayEnabled: fallbackIsReservationDayEnabled,
 };
 
-export default async function ReservasPage() {
+export default async function ReservaPage() {
   let availability = fallbackAvailability;
 
   try {
@@ -31,11 +38,11 @@ export default async function ReservasPage() {
   }
 
   return (
-    <main className="reservas-page">
+    <main className="reserva-page">
       <div className="reservation-mini-nav">
         <Link href="/">Rustic Pub</Link>
       </div>
-      <section className="reservation-hero" aria-label="Reservas Rustic Pub">
+      <section className="reservation-hero" aria-label="Reserva Rustic Pub">
         <div className="reservation-hero__media" aria-hidden="true" />
         <div className="reservation-hero__content">
           <div className="reservation-brand">
@@ -44,13 +51,25 @@ export default async function ReservasPage() {
           </div>
           <div className="reservation-copy">
             <p className="eyebrow">Rustic Pub</p>
-            <h1>Reservas</h1>
+            <h1>Reserva</h1>
             <p>Elegis fecha, cantidad de personas y confirmas tu mesa en segundos.</p>
           </div>
           <ReservationFlow initialAvailability={availability} />
         </div>
       </section>
-      <SiteFooter />
     </main>
   );
+}
+
+function fallbackDayLabel(value: string) {
+  return new Intl.DateTimeFormat("es-AR", {
+    timeZone: "UTC",
+    weekday: "long",
+  }).format(new Date(`${value}T00:00:00.000Z`));
+}
+
+function isReservationDayEnabled(value: string) {
+  const day = new Date(`${value}T00:00:00.000Z`).getUTCDay();
+
+  return fallbackEnabledDayIndexes.includes(day);
 }

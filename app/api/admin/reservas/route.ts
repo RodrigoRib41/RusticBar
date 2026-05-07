@@ -3,9 +3,13 @@ import { isAdminRequest } from "../../../../lib/admin-auth";
 import {
   ReservationError,
   createReservation,
+  deleteReservationsByDate,
   getAvailability,
   listReservations,
-  parseCreateReservationInput,
+  parseCreateAdminReservationInput,
+  parseReservationCapacityInput,
+  parseReservationDayDeleteInput,
+  updateReservationDayCapacity,
 } from "../../../../lib/reservations";
 
 export const runtime = "nodejs";
@@ -16,18 +20,25 @@ export async function GET(request: NextRequest) {
     return unauthorizedResponse();
   }
 
-  const date = request.nextUrl.searchParams.get("date") ?? undefined;
-  const reservations = await listReservations({ date });
-  const availability = date ? await getAvailability(date) : null;
+  try {
+    const date = request.nextUrl.searchParams.get("date") ?? undefined;
+    const startDate = request.nextUrl.searchParams.get("startDate") ?? undefined;
+    const endDate = request.nextUrl.searchParams.get("endDate") ?? undefined;
+    const user = request.nextUrl.searchParams.get("user") ?? undefined;
+    const reservations = await listReservations({ date, endDate, startDate, user });
+    const availability = date ? await getAvailability(date) : null;
 
-  return NextResponse.json(
-    { availability, reservations },
-    {
-      headers: {
-        "Cache-Control": "no-store",
+    return NextResponse.json(
+      { availability, reservations },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
       },
-    },
-  );
+    );
+  } catch (error) {
+    return reservationErrorResponse(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -36,10 +47,48 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const input = parseCreateReservationInput(await request.json());
-    const result = await createReservation(input);
+    const input = parseCreateAdminReservationInput(await request.json());
+    const result = await createReservation(input, { requirePhone: false });
 
     return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    return reservationErrorResponse(error);
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!isAdminRequest(request)) {
+    return unauthorizedResponse();
+  }
+
+  try {
+    const body = await readJsonBody(request);
+    const input = parseReservationCapacityInput({
+      ...body,
+      date: request.nextUrl.searchParams.get("date") ?? body.date,
+    });
+    const result = await updateReservationDayCapacity(input);
+
+    return NextResponse.json(result);
+  } catch (error) {
+    return reservationErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!isAdminRequest(request)) {
+    return unauthorizedResponse();
+  }
+
+  try {
+    const body = await readJsonBody(request);
+    const input = parseReservationDayDeleteInput({
+      ...body,
+      date: request.nextUrl.searchParams.get("date") ?? body.date,
+    });
+    const result = await deleteReservationsByDate(input);
+
+    return NextResponse.json(result);
   } catch (error) {
     return reservationErrorResponse(error);
   }
@@ -75,4 +124,14 @@ function reservationErrorResponse(error: unknown) {
     },
     { status: 500 },
   );
+}
+
+async function readJsonBody(request: NextRequest) {
+  try {
+    const body = await request.json();
+
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }

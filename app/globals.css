@@ -1,5 +1,155 @@
 @import "tailwindcss";
 
+@keyframes order-screen-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  8% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  76% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes order-screen-flash-logo {
+  0%,
+  100% {
+    transform: scale(1) rotate(-2deg);
+  }
+
+  50% {
+    transform: scale(1.08) rotate(2deg);
+  }
+}
+
+@keyframes reservation-thanks-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  16% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  78% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes reservation-thanks-logo {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-8px) scale(1.04);
+  }
+}
+
+.order-screen-flash {
+  animation: order-screen-flash 2.8s ease-out forwards;
+}
+
+.order-screen-flash__logo {
+  animation: order-screen-flash-logo 0.42s ease-in-out infinite;
+}
+
+.reservation-thanks {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(243, 179, 77, 0.22), transparent 16rem),
+    rgba(5, 6, 5, 0.88);
+  backdrop-filter: blur(14px);
+  animation: reservation-thanks-in 3.2s ease-out forwards;
+}
+
+.reservation-thanks__card {
+  width: min(420px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  border: 1px solid rgba(255, 217, 139, 0.3);
+  border-radius: 8px;
+  padding: 28px 22px 30px;
+  color: #fff7e8;
+  background:
+    linear-gradient(180deg, rgba(255, 243, 220, 0.09), rgba(255, 243, 220, 0.03)),
+    #0d100c;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+  text-align: center;
+}
+
+.reservation-thanks__logo {
+  width: 148px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(255, 217, 139, 0.3),
+    0 18px 58px rgba(0, 0, 0, 0.46);
+  animation: reservation-thanks-logo 0.78s ease-in-out infinite;
+}
+
+.reservation-thanks__logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.reservation-thanks p,
+.reservation-thanks h2,
+.reservation-thanks span {
+  margin: 0;
+}
+
+.reservation-thanks p {
+  color: #a9e6a6;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.reservation-thanks h2 {
+  color: #ffd98b;
+  font-size: 2.4rem;
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.reservation-thanks span {
+  max-width: 300px;
+  color: #ead6b6;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
 :root {
   --background: #070b0e;
   --background-soft: #101113;
@@ -67,7 +217,7 @@ p {
 .home-page,
 .menu-page,
 .qr-page,
-.reservas-page {
+.reserva-page {
   min-height: 100vh;
 }
 
@@ -894,7 +1044,7 @@ p {
   justify-content: center;
 }
 
-.reservas-page {
+.reserva-page {
   background: #090b0b;
 }
 
@@ -1150,6 +1300,13 @@ p {
   margin: 0;
   color: #dff6d8;
   font-weight: 900;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reservation-thanks,
+  .reservation-thanks__logo {
+    animation: none;
+  }
 }
 
 @media print {

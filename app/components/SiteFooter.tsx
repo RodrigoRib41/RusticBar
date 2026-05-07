@@ -11,6 +11,7 @@ export function SiteFooter() {
         <div>
           <p className="text-lg font-black uppercase text-amber-100">Rustic Pub</p>
           <p className="mt-1 text-sm text-amber-50/55">&copy; 2026 Rustic Pub. Todos los derechos reservados.</p>
+          <p className="mt-1 text-sm text-amber-50/55"> Sitio desarrollado por Rodrigo Riboldi.</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <a

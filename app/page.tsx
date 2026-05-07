@@ -3,7 +3,7 @@ import { RusticPubLanding } from "./components/RusticPubLanding";
 
 export const metadata: Metadata = {
   title: "Rustic Pub | Tu nuevo pub favorito",
-  description: "Rustic Pub en E. Lopez 353, Gob. Crespo. Pub, barra y reservas online.",
+  description: "Rustic Pub en E. Lopez 353, Gob. Crespo. Pub, barra y reserva online.",
   alternates: {
     canonical: "/",
   },

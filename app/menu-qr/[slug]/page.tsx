@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { MenuCategoryPage } from "../../components/MenuCategoryPage";
-import { getMenuSection, menuSections, type MenuSection } from "../../menu-data";
+import { getMenuCatalog } from "../../../lib/menu";
+import { MENU_CATEGORIES, type MenuCategory } from "../../../lib/menu-types";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   robots: {
@@ -11,8 +14,8 @@ export const metadata: Metadata = {
 };
 
 export function generateStaticParams() {
-  return menuSections.map((section) => ({
-    slug: section.slug,
+  return MENU_CATEGORIES.map((category) => ({
+    slug: category,
   }));
 }
 
@@ -22,11 +25,33 @@ export default async function MenuQrSectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const section = getMenuSection(slug as MenuSection["slug"]);
+  const category = normalizeCategorySlug(slug);
+
+  if (!category) {
+    notFound();
+  }
+
+  const sections = await getMenuCatalog();
+  const section = sections.find((section) => section.slug === category);
 
   if (!section) {
     notFound();
   }
 
   return <MenuCategoryPage section={section} />;
+}
+
+function normalizeCategorySlug(value: string): MenuCategory | null {
+  if (MENU_CATEGORIES.includes(value as MenuCategory)) {
+    return value as MenuCategory;
+  }
+
+  const aliases: Record<string, MenuCategory> = {
+    bebidas: "bebida",
+    comidas: "comida",
+    postres: "postre",
+    promos: "promo",
+  };
+
+  return aliases[value] ?? null;
 }

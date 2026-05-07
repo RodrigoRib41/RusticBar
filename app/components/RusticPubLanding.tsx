@@ -2,12 +2,9 @@
 
 import { SiteFooter } from "./SiteFooter";
 
-const WHATSAPP_NUMBER = "5493498438728";
 const MAP_DIRECTIONS_URL = "https://maps.app.goo.gl/yfZzvNXGbASTPVUH8";
 const MAP_EMBED_URL =
   "https://www.google.com/maps?q=Gobernador%20Crespo%2C%20Santa%20Fe%2C%20Argentina&z=14&output=embed";
-const whatsappMessage = encodeURIComponent("Hola Rustic Pub, quiero reservar una mesa.");
-const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${whatsappMessage}`;
 
 const benefits = [
   ["01", "Reserva simple", "Elegis fecha, cantidad de personas y confirmas tu lugar online."],
@@ -71,11 +68,9 @@ function HeroSection() {
         </a>
         <a
           className="hidden rounded-full border border-black/15 bg-[#d8c5aa]/80 px-4 py-2 text-sm font-black text-[#14110d] shadow-xl shadow-black/10 backdrop-blur transition hover:bg-amber-200 sm:inline-flex"
-          href={whatsappHref}
-          rel="noreferrer"
-          target="_blank"
+          href="/reserva"
         >
-          WhatsApp
+          Reservar
         </a>
       </header>
 
@@ -93,7 +88,7 @@ function HeroSection() {
           <div className="rustic-fade-up rustic-delay-3 mt-7 grid gap-3 sm:flex">
             <a
               className="inline-flex min-h-14 items-center justify-center rounded-xl bg-gradient-to-b from-amber-200 to-amber-500 px-6 text-base font-black text-[#130b04] shadow-[0_18px_45px_rgba(245,158,11,.28)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(245,158,11,.38)]"
-              href="/reservas"
+              href="/reserva"
             >
               Reservar
             </a>
@@ -140,10 +135,10 @@ function ReservationSection() {
   return (
     <section
       className="border-y border-[#d8c5aa]/15 bg-[linear-gradient(135deg,rgba(216,197,170,.24),rgba(18,12,8,.98)_40%,rgba(7,5,4,1))] px-4 py-14 sm:px-6 lg:px-10 lg:py-20"
-      id="reservas"
+      id="reserva"
     >
       <div className="mx-auto max-w-5xl">
-        <p className="mb-3 text-xs font-black uppercase text-amber-300">Reservas</p>
+        <p className="mb-3 text-xs font-black uppercase text-amber-300">Reserva</p>
         <h2 className="text-4xl font-black uppercase leading-none text-white sm:text-6xl">Reserva tu lugar</h2>
         <p className="mt-5 max-w-2xl text-lg leading-8 text-amber-50/78">
           La reserva se hace en una pagina separada para que el proceso sea claro, rapido y sin distracciones.
@@ -152,17 +147,9 @@ function ReservationSection() {
         <div className="mt-7 grid gap-3 sm:flex">
           <a
             className="inline-flex min-h-14 items-center justify-center rounded-xl bg-[#d8c5aa] px-6 text-base font-black text-[#130b04] shadow-[0_18px_45px_rgba(216,197,170,.18)] transition hover:-translate-y-0.5 hover:bg-amber-200"
-            href="/reservas"
+            href="/reserva"
           >
-            Ir a reservas
-          </a>
-          <a
-            className="inline-flex min-h-14 items-center justify-center rounded-xl border border-[#d8c5aa]/35 px-6 text-base font-black text-amber-100 transition hover:border-amber-200/60 hover:bg-[#d8c5aa]/10"
-            href={whatsappHref}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Consultar por WhatsApp
+            Ir a reserva
           </a>
         </div>
       </div>

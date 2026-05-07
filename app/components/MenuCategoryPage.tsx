@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { MenuSection, menuSections } from "../menu-data";
+import { MENU_CATEGORY_OPTIONS, type MenuCatalogSection } from "../../lib/menu-types";
+import { MenuImage } from "./MenuImage";
 
 type MenuCategoryPageProps = {
-  section: MenuSection;
+  section: MenuCatalogSection;
   basePath?: string;
 };
 
@@ -36,14 +37,12 @@ export function MenuCategoryPage({ section, basePath = "/menu-qr" }: MenuCategor
               <div className="item-list">
                 {group.items.map((item) => (
                   <article className="photo-item" key={item.name}>
-                    <div className="photo-item__image">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={item.image} alt={item.name} />
+                    <div className="photo-item__image relative">
+                      <MenuImage alt={item.name} sizes="(max-width: 640px) 100vw, 240px" src={item.image} />
                     </div>
                     <div className="photo-item__body">
                       <div className="menu-item__title">
                         <h3>{item.name}</h3>
-                        {item.badge ? <span>{item.badge}</span> : null}
                       </div>
                       <p>{item.description}</p>
                       <strong>{item.price}</strong>
@@ -80,18 +79,18 @@ export function CategoryNav({
   activeSlug,
   basePath = "/menu-qr",
 }: {
-  activeSlug?: MenuSection["slug"];
+  activeSlug?: MenuCatalogSection["slug"];
   basePath?: string;
 }) {
   return (
     <nav className="category-nav" aria-label="Categorias del menu">
-      {menuSections.map((section) => (
+      {MENU_CATEGORY_OPTIONS.map((section) => (
         <Link
-          aria-current={activeSlug === section.slug ? "page" : undefined}
-          href={`${basePath}/${section.slug}`}
-          key={section.slug}
+          aria-current={activeSlug === section.value ? "page" : undefined}
+          href={`${basePath}/${section.value}`}
+          key={section.value}
         >
-          {section.title}
+          {section.label}
         </Link>
       ))}
     </nav>
