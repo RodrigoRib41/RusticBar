@@ -1,6 +1,7 @@
 "use client";
 
 import * as Popover from "@radix-ui/react-popover";
+import { useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 
 type DatePickerProps = {
@@ -26,6 +27,7 @@ export function DatePicker({
   showAvailabilityLegend = false,
   value,
 }: DatePickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const selected = value ? dateStringToDate(value) : undefined;
   const minDate = disabledBefore ? dateStringToDate(disabledBefore) : undefined;
   const maxDate = disabledAfter ? dateStringToDate(disabledAfter) : undefined;
@@ -50,7 +52,7 @@ export function DatePicker({
   }
 
   return (
-    <Popover.Root>
+    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
       <Popover.Trigger asChild>
         <button
           className="min-h-12 rounded-2xl border border-amber-200/20 bg-white/10 px-4 text-left text-sm font-black text-white outline-none transition hover:bg-white/[.14] focus:border-amber-300/70 focus:ring-4 focus:ring-amber-300/10"
@@ -119,6 +121,7 @@ export function DatePicker({
             onSelect={(day) => {
               if (day) {
                 onChange(dateToString(day));
+                setIsOpen(false);
               }
             }}
             selected={selected}

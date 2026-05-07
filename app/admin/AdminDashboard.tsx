@@ -1401,6 +1401,24 @@ function AdminInput({
     );
   }
 
+  if (type === "time") {
+    return (
+      <div className="grid gap-2 text-sm font-black text-amber-50/80">
+        <span>{label}</span>
+        <input
+          aria-label={label}
+          className="min-h-11 rounded-xl border border-amber-200/20 bg-white/10 px-3 text-sm text-white outline-none transition focus:border-amber-300/70"
+          max={max}
+          min={min}
+          onChange={(event) => onChange(event.target.value)}
+          required={required}
+          type={type}
+          value={value}
+        />
+      </div>
+    );
+  }
+
   return (
     <label className="grid gap-2 text-sm font-black text-amber-50/80">
       {label}

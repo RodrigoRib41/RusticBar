@@ -265,7 +265,7 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
         },
         method: "POST",
       });
-      const data = (await response.json()) as CreateReservationResponse;
+      const data = await readCreateReservationResponse(response);
 
       if (!response.ok) {
         throw new Error(data.message ?? "No pudimos crear la reserva.");
@@ -482,16 +482,17 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
                 />
               </label>
 
-              <label className="grid gap-2 text-sm font-black text-amber-50/85">
-                Horario
+              <div className="grid gap-2 text-sm font-black text-amber-50/85">
+                <span>Horario</span>
                 <input
+                  aria-label="Horario"
                   className="min-h-12 rounded-xl border border-amber-200/20 bg-white/10 px-4 text-base text-white outline-none transition focus:border-amber-300/70 focus:ring-4 focus:ring-amber-300/10"
                   onChange={(event) => setTime(event.target.value)}
                   required
                   type="time"
                   value={time}
                 />
-              </label>
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -556,6 +557,24 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
       )}
     </section>
   );
+}
+
+async function readCreateReservationResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {} as CreateReservationResponse;
+  }
+
+  try {
+    return JSON.parse(text) as CreateReservationResponse;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "La respuesta de la reserva no fue valida."
+        : `No pudimos procesar la reserva en el servidor. Codigo ${response.status}.`,
+    );
+  }
 }
 
 function formatDisplayDate(value: string) {
