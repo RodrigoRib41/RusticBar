@@ -5,7 +5,13 @@ import type { BalanceView } from "../../lib/balance";
 import { listBlockedEmails } from "../../lib/blocked-emails";
 import { listHomeGalleryImages } from "../../lib/home-gallery";
 import { MENU_CATEGORY_OPTIONS, type MenuAdminView } from "../../lib/menu-types";
-import { getAvailability, getReservationSettings, getTodayDateString, listReservations } from "../../lib/reservations";
+import {
+  getAvailability,
+  getReservationSettings,
+  getTodayDateString,
+  listReservations,
+  type ReservationWeekDayAvailability,
+} from "../../lib/reservations";
 import { AdminDashboard } from "./AdminDashboard";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +39,7 @@ export default async function AdminPage() {
     listBlockedEmails(),
   ]);
   const initialAvailabilityDate =
-    reservationSettings.days.find((day) => day.enabled && !day.isPast)?.date ?? today;
+    reservationSettings.days.find((day: ReservationWeekDayAvailability) => day.enabled && !day.isPast)?.date ?? today;
   const availability = await getAvailability(initialAvailabilityDate);
   const balance: BalanceView = {
     days: [],
