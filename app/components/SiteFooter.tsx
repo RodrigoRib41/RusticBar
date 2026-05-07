@@ -1,5 +1,5 @@
-const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_CONTACT_WHATSAPP?.replace(/\D/g, "") || "5493498438728";
-const INSTAGRAM_URL = process.env.NEXT_PUBLIC_INSTAGRAM_URL || "https://www.instagram.com/rustic.pubgc/";
+const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_CONTACT_WHATSAPP?.replace(/\D/g, "") ?? "";
+const INSTAGRAM_URL = process.env.NEXT_PUBLIC_INSTAGRAM_URL ?? "";
 
 const whatsappMessage = encodeURIComponent("Hola Rustic Pub, quiero hacer una consulta.");
 const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${whatsappMessage}`;
@@ -14,22 +14,26 @@ export function SiteFooter() {
           <p className="mt-1 text-sm text-amber-50/55"> Sitio desarrollado por Rodrigo Riboldi.</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <a
-            className="rounded-full border border-amber-200/20 px-4 py-2 text-sm font-black text-amber-100 transition hover:bg-amber-200/10"
-            href={whatsappHref}
-            rel="noreferrer"
-            target="_blank"
-          >
-            WhatsApp
-          </a>
-          <a
-            className="rounded-full border border-amber-200/20 px-4 py-2 text-sm font-black text-amber-100 transition hover:bg-amber-200/10"
-            href={INSTAGRAM_URL}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Instagram
-          </a>
+          {WHATSAPP_NUMBER ? (
+            <a
+              className="rounded-full border border-amber-200/20 px-4 py-2 text-sm font-black text-amber-100 transition hover:bg-amber-200/10"
+              href={whatsappHref}
+              rel="noreferrer"
+              target="_blank"
+            >
+              WhatsApp
+            </a>
+          ) : null}
+          {INSTAGRAM_URL ? (
+            <a
+              className="rounded-full border border-amber-200/20 px-4 py-2 text-sm font-black text-amber-100 transition hover:bg-amber-200/10"
+              href={INSTAGRAM_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Instagram
+            </a>
+          ) : null}
         </div>
       </div>
     </footer>

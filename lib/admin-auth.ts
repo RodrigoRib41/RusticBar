@@ -84,15 +84,25 @@ function sign(value: string) {
 }
 
 function getAdminUser() {
-  return process.env.ADMIN_USER ?? "admin";
+  return getRequiredAdminEnv("ADMIN_USER");
 }
 
 function getAdminPassword() {
-  return process.env.ADMIN_PASSWORD ?? "admin123";
+  return getRequiredAdminEnv("ADMIN_PASSWORD");
 }
 
 function getSessionSecret() {
-  return process.env.ADMIN_SESSION_SECRET ?? `${getAdminUser()}:${getAdminPassword()}:rustic-pub`;
+  return getRequiredAdminEnv("ADMIN_SESSION_SECRET");
+}
+
+function getRequiredAdminEnv(key: "ADMIN_PASSWORD" | "ADMIN_SESSION_SECRET" | "ADMIN_USER") {
+  const value = process.env[key]?.trim();
+
+  if (!value) {
+    throw new Error(`${key} is required for admin authentication.`);
+  }
+
+  return value;
 }
 
 function base64UrlEncode(value: string) {
