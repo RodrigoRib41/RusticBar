@@ -3,8 +3,8 @@ import { isAdminRequest } from "../../../../../lib/admin-auth";
 import {
   ReservationError,
   getReservationSettings,
-  parseEnabledReservationDayInput,
-  updateEnabledReservationDay,
+  parseReservationDateEnabledInput,
+  updateReservationDateEnabled,
 } from "../../../../../lib/reservations";
 
 export const runtime = "nodejs";
@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const settings = await getReservationSettings();
+    const date = request.nextUrl.searchParams.get("date") ?? undefined;
+    const settings = await getReservationSettings(date);
 
     return NextResponse.json(
       { settings },
@@ -37,8 +38,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const input = parseEnabledReservationDayInput(await request.json());
-    const result = await updateEnabledReservationDay(input);
+    const input = parseReservationDateEnabledInput(await request.json());
+    const result = await updateReservationDateEnabled(input);
 
     return NextResponse.json(result);
   } catch (error) {

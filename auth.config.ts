@@ -1,8 +1,16 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
+import { isEmailBlocked } from "./lib/blocked-emails";
 
 export const authConfig = {
   callbacks: {
+    async signIn({ user }) {
+      if (user.email && (await isEmailBlocked(user.email))) {
+        return "/reserva?blocked=1";
+      }
+
+      return true;
+    },
     async jwt({ account, token, user }) {
       if (user?.id) {
         token.id = user.id;

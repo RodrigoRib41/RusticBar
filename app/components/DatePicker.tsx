@@ -4,7 +4,10 @@ import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type Matcher } from "react-day-picker";
 
 type DatePickerProps = {
+  allowedDates?: string[];
   allowedWeekDays?: number[];
+  dayStatusByDate?: Record<string, "available" | "disabled" | "full" | "past">;
+  disabledAfter?: string;
   disabledBefore?: string;
   label?: string;
   onChange: (value: string) => void;
@@ -13,7 +16,10 @@ type DatePickerProps = {
 };
 
 export function DatePicker({
+  allowedDates,
   allowedWeekDays,
+  dayStatusByDate,
+  disabledAfter,
   disabledBefore,
   label = "Fecha",
   onChange,
@@ -22,11 +28,21 @@ export function DatePicker({
 }: DatePickerProps) {
   const selected = value ? dateStringToDate(value) : undefined;
   const minDate = disabledBefore ? dateStringToDate(disabledBefore) : undefined;
+  const maxDate = disabledAfter ? dateStringToDate(disabledAfter) : undefined;
+  const allowedDateSet = Array.isArray(allowedDates) ? new Set(allowedDates) : null;
   const allowedWeekDaySet = Array.isArray(allowedWeekDays) ? new Set(allowedWeekDays) : null;
   const disabledDays: Matcher[] = [];
 
   if (minDate) {
     disabledDays.push({ before: minDate });
+  }
+
+  if (maxDate) {
+    disabledDays.push({ after: maxDate });
+  }
+
+  if (allowedDateSet) {
+    disabledDays.push((day) => !allowedDateSet.has(dateToString(day)));
   }
 
   if (allowedWeekDaySet) {
@@ -88,6 +104,16 @@ export function DatePicker({
             labels={{
               labelNext: () => "Mes siguiente",
               labelPrevious: () => "Mes anterior",
+            }}
+            modifiers={{
+              available: (day) => dayStatusByDate?.[dateToString(day)] === "available",
+              full: (day) => dayStatusByDate?.[dateToString(day)] === "full",
+              past: (day) => dayStatusByDate?.[dateToString(day)] === "past",
+            }}
+            modifiersClassNames={{
+              available: "text-emerald-100 ring-1 ring-emerald-300/35",
+              full: "bg-red-400/10 text-red-100 line-through",
+              past: "text-amber-50/20",
             }}
             mode="single"
             onSelect={(day) => {

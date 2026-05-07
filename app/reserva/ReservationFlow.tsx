@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DatePicker } from "../components/DatePicker";
 
 export type Availability = {
@@ -14,7 +14,20 @@ export type Availability = {
   dayLabel: string;
   isHabitualOpenDay: boolean;
   isReservationDayEnabled: boolean;
-  enabledDayIndexes: number[];
+  enabledDateStrings: string[];
+  weekEndDate: string;
+  weekStartDate: string;
+  weekDays: {
+    available: number;
+    capacity: number;
+    date: string;
+    dayLabel: string;
+    enabled: boolean;
+    isFull: boolean;
+    isPast: boolean;
+    reserved: number;
+    selectable: boolean;
+  }[];
 };
 
 type ReservationView = {
@@ -71,18 +84,16 @@ const reservationWhatsAppUrl = contactWhatsApp
       "Hola Rustic Pub, quiero solicitar una reserva.",
     )}`
   : "";
-const defaultEnabledDayIndexes = [0, 4, 5, 6];
+const blockedMessage = "Tu cuenta no tiene permisos para realizar reservas.";
 
 export function ReservationFlow({ initialAvailability }: { initialAvailability: Availability }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const [availability, setAvailability] = useState(initialAvailability);
-  const [todayAvailability, setTodayAvailability] = useState(initialAvailability);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [date, setDate] = useState(() =>
-    getInitialSelectableDate(initialAvailability.date || today, initialAvailability.enabledDayIndexes ?? defaultEnabledDayIndexes),
-  );
+  const [date, setDate] = useState(initialAvailability.date || today);
   const [time, setTime] = useState("21:00");
   const [people, setPeople] = useState("2");
   const [recaptchaToken, setRecaptchaToken] = useState("");
@@ -93,14 +104,22 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
   const [isSigningIn, setIsSigningIn] = useState(false);
   const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
   const recaptchaWidgetIdRef = useRef<number | null>(null);
+  const isBlockedRedirect = searchParams.get("blocked") === "1";
 
   const peopleNumber = useMemo(() => Number(people), [people]);
   const isOverCapacity = Number.isFinite(peopleNumber) && peopleNumber > availability.available;
-  const enabledDayIndexes = useMemo(
-    () => availability.enabledDayIndexes ?? defaultEnabledDayIndexes,
-    [availability.enabledDayIndexes],
-  );
-  const selectedDateIsEnabled = isDateWeekDayEnabled(date, enabledDayIndexes);
+  const allowedDates = useMemo(() => availability.weekDays.filter((day) => day.selectable).map((day) => day.date), [availability.weekDays]);
+  const dayStatusByDate = useMemo(() => {
+    const statuses: Record<string, "available" | "disabled" | "full" | "past"> = {};
+
+    availability.weekDays.forEach((day) => {
+      statuses[day.date] = day.isPast ? "past" : day.isFull ? "full" : day.selectable ? "available" : "disabled";
+    });
+
+    return statuses;
+  }, [availability.weekDays]);
+  const selectedDateIsEnabled = availability.isReservationDayEnabled && date >= today && date >= availability.weekStartDate && date <= availability.weekEndDate;
+  const selectedDateIsFull = availability.isReservationDayEnabled && availability.available <= 0;
   const isAuthenticated = status === "authenticated";
   const userName = session?.user?.name || "invitado";
   const userImage = session?.user?.image;
@@ -109,6 +128,7 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
     Boolean(recaptchaToken) &&
     Boolean(recaptchaSiteKey) &&
     selectedDateIsEnabled &&
+    !selectedDateIsFull &&
     !isOverCapacity &&
     !success;
 
@@ -121,21 +141,7 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
         const data = (await response.json()) as Availability;
 
         if (isMounted && response.ok) {
-          const dataEnabledDays = data.enabledDayIndexes ?? defaultEnabledDayIndexes;
-
-          if (!isDateWeekDayEnabled(data.date, dataEnabledDays)) {
-            const nextDate = findNextEnabledDate(today, dataEnabledDays);
-
-            if (nextDate && nextDate !== data.date) {
-              setDate(nextDate);
-              return;
-            }
-          }
-
           setAvailability(data);
-          if (data.date === today) {
-            setTodayAvailability(data);
-          }
         }
       } catch {
         if (isMounted) {
@@ -146,35 +152,6 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
 
     refreshAvailability();
     const interval = window.setInterval(refreshAvailability, 15000);
-
-    return () => {
-      isMounted = false;
-      window.clearInterval(interval);
-    };
-  }, [date]);
-
-  useEffect(() => {
-    if (date === today) {
-      return;
-    }
-
-    let isMounted = true;
-
-    const refreshTodayAvailability = async () => {
-      try {
-        const response = await fetch(`/api/availability?date=${today}`, { cache: "no-store" });
-        const data = (await response.json()) as Availability;
-
-        if (isMounted && response.ok) {
-          setTodayAvailability(data);
-        }
-      } catch {
-        // The selected-day availability already exposes errors to the user.
-      }
-    };
-
-    refreshTodayAvailability();
-    const interval = window.setInterval(refreshTodayAvailability, 30000);
 
     return () => {
       isMounted = false;
@@ -322,29 +299,14 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
       {success ? <ReservationThanksOverlay reservation={success} /> : null}
 
       <div className="mb-5 grid gap-3">
-        <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-black uppercase text-emerald-100">Disponibles hoy</span>
-            <strong className="text-3xl font-black text-white">{todayAvailability.available}</strong>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold uppercase text-emerald-50/70">
-            <span>{formatDisplayDate(todayAvailability.date)} - cupo {todayAvailability.capacity}</span>
-            <span
-              className={`rounded-full px-2 py-1 font-black ${
-                todayAvailability.isReservationDayEnabled ? "bg-emerald-300/20 text-emerald-50" : "bg-white/10 text-amber-50/55"
-              }`}
-            >
-              {todayAvailability.isReservationDayEnabled ? "Disponible" : "No disponible"}
-            </span>
-          </div>
-        </div>
-
         <div className="rounded-2xl border border-amber-200/15 bg-white/[.04] p-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <label className="grid gap-2 text-sm font-black text-amber-50/85">
-              Consultar otro dia
+              Elegí un día de esta semana
               <DatePicker
-                allowedWeekDays={enabledDayIndexes}
+                allowedDates={allowedDates}
+                dayStatusByDate={dayStatusByDate}
+                disabledAfter={availability.weekEndDate}
                 disabledBefore={today}
                 label="Disponibilidad"
                 onChange={(value) => {
@@ -359,10 +321,13 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
               </span>
             </label>
             <div className="rounded-2xl border border-amber-200/15 bg-[#120c08] px-4 py-3 text-right">
-              <p className="text-xs font-black uppercase text-amber-300">Disponibles</p>
+              <p className="text-xs font-black uppercase text-amber-300">Disponibilidad</p>
               <strong className="text-3xl font-black text-white">{availability.available}</strong>
             </div>
           </div>
+          <p className="mt-4 text-base font-black text-white">
+            Disponibilidad para {availability.dayLabel} {formatLongDisplayDate(availability.date)}: {availability.available} lugares
+          </p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-black uppercase">
             <span className="rounded-full border border-amber-200/15 px-3 py-1 text-amber-100">
               {availability.dayLabel} {formatDisplayDate(availability.date)}
@@ -376,6 +341,9 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
             >
               {availability.isReservationDayEnabled ? "Disponible" : "No disponible"}
             </span>
+            {selectedDateIsFull ? (
+              <span className="rounded-full bg-red-400/12 px-3 py-1 text-red-100">Completo</span>
+            ) : null}
             <span className="rounded-full border border-amber-200/15 px-3 py-1 text-amber-100">
               Cupo {availability.capacity} - Reservados {availability.reserved}
             </span>
@@ -391,6 +359,11 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
         </div>
       ) : !isAuthenticated ? (
         <div className="grid gap-4 rounded-3xl border border-amber-200/10 bg-white/[.04] p-4">
+          {isBlockedRedirect ? (
+            <p className="rounded-xl border border-red-300/25 bg-red-500/15 px-4 py-3 text-sm font-bold text-red-50">
+              {blockedMessage}
+            </p>
+          ) : null}
           <div>
             <p className="text-xs font-black uppercase text-amber-300">Login seguro</p>
             <h2 className="mt-1 text-2xl font-black text-white">Reserva con tu cuenta Google</h2>
@@ -495,7 +468,9 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
               <label className="grid gap-2 text-sm font-black text-amber-50/85">
                 Fecha
                 <DatePicker
-                  allowedWeekDays={enabledDayIndexes}
+                  allowedDates={allowedDates}
+                  dayStatusByDate={dayStatusByDate}
+                  disabledAfter={availability.weekEndDate}
                   disabledBefore={today}
                   label="Reserva"
                   onChange={(value) => {
@@ -553,7 +528,13 @@ export function ReservationFlow({ initialAvailability }: { initialAvailability: 
 
             {!selectedDateIsEnabled ? (
               <p className="rounded-xl border border-amber-200/20 bg-white/10 px-4 py-3 text-sm font-bold text-amber-50/70">
-                Ese día no está habilitado para reservas. Elegí un día disponible del calendario.
+                Ese día no está habilitado para reservas o está fuera de la semana actual.
+              </p>
+            ) : null}
+
+            {selectedDateIsFull ? (
+              <p className="rounded-xl border border-red-300/25 bg-red-500/15 px-4 py-3 text-sm font-bold text-red-50">
+                Ese día está completo. Elegí otro día disponible de esta semana.
               </p>
             ) : null}
 
@@ -583,48 +564,15 @@ function formatDisplayDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
-function getInitialSelectableDate(value: string, enabledDayIndexes: number[]) {
-  if (isDateWeekDayEnabled(value, enabledDayIndexes)) {
-    return value;
-  }
-
-  return findNextEnabledDate(today, enabledDayIndexes) ?? value;
-}
-
-function isDateWeekDayEnabled(value: string, enabledDayIndexes: number[]) {
-  if (!enabledDayIndexes.length) {
-    return false;
-  }
-
-  const day = new Date(`${value}T00:00:00.000Z`).getUTCDay();
-
-  return enabledDayIndexes.includes(day);
-}
-
-function findNextEnabledDate(fromDate: string, enabledDayIndexes: number[]) {
-  if (!enabledDayIndexes.length) {
-    return null;
-  }
-
-  let current = fromDate;
-
-  for (let index = 0; index < 370; index += 1) {
-    if (isDateWeekDayEnabled(current, enabledDayIndexes)) {
-      return current;
-    }
-
-    current = shiftDateString(current, 1);
-  }
-
-  return null;
-}
-
-function shiftDateString(value: string, days: number) {
+function formatLongDisplayDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
 
-  return date.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 function ReservationThanksOverlay({ reservation }: { reservation: ReservationView }) {

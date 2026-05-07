@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 const MENU_IMAGE_FOLDER = "rustic-pub/menu";
+const HOME_IMAGE_FOLDER = "rustic-pub/home";
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
@@ -36,12 +37,20 @@ export class CloudinaryError extends Error {
 }
 
 export async function uploadMenuImage(file: File): Promise<UploadedMenuImage> {
+  return uploadCloudinaryImage(file, MENU_IMAGE_FOLDER);
+}
+
+export async function uploadHomeImage(file: File): Promise<UploadedMenuImage> {
+  return uploadCloudinaryImage(file, HOME_IMAGE_FOLDER);
+}
+
+async function uploadCloudinaryImage(file: File, folder: string): Promise<UploadedMenuImage> {
   validateMenuImage(file);
 
   const config = getCloudinaryConfig();
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const params = {
-    folder: MENU_IMAGE_FOLDER,
+    folder,
     timestamp,
   };
   const body = new FormData();

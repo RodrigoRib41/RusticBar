@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DatePicker } from "../components/DatePicker";
 import type { BalanceView } from "../../lib/balance";
+import type { BlockedEmailView } from "../../lib/blocked-emails";
+import type { HomeGalleryImageView } from "../../lib/home-gallery";
 import type { MenuAdminView } from "../../lib/menu-types";
 import type { OrderState, PedidoView } from "../../lib/orders";
 import type { Availability, ReservationSettingsView, ReservationView } from "../../lib/reservations";
@@ -15,6 +17,8 @@ import { MenuAdminPanel } from "./MenuAdminPanel";
 type AdminDashboardProps = {
   initialAvailability: Availability;
   initialBalance: BalanceView;
+  initialBlockedEmails: BlockedEmailView[];
+  initialHomeGallery: HomeGalleryImageView[];
   initialMenu: MenuAdminView;
   initialPedidos: PedidoView[];
   initialReservations: ReservationView[];
@@ -83,6 +87,18 @@ type ReservationSettingsResponse = {
   settings?: ReservationSettingsView;
 };
 
+type BlockedEmailsResponse = {
+  blockedEmail?: BlockedEmailView;
+  blockedEmails?: BlockedEmailView[];
+  message?: string;
+};
+
+type HomeGalleryResponse = {
+  image?: HomeGalleryImageView;
+  images?: HomeGalleryImageView[];
+  message?: string;
+};
+
 type FormState = {
   date: string;
   name: string;
@@ -105,7 +121,7 @@ const allOrderStateFilters: Record<OrderState, boolean> = {
 };
 const MAX_DAILY_RESERVATION_CAPACITY = 500;
 
-type AdminSection = "balance" | "menu" | "pedidos" | "reservas";
+type AdminSection = "balance" | "home" | "menu" | "pedidos" | "reservas";
 
 type MesaPedidosGroup = {
   activeCount: number;
@@ -122,6 +138,8 @@ type MesaPedidosGroup = {
 export function AdminDashboard({
   initialAvailability,
   initialBalance,
+  initialBlockedEmails,
+  initialHomeGallery,
   initialMenu,
   initialPedidos,
   initialReservations,
@@ -133,6 +151,11 @@ export function AdminDashboard({
   const [reservations, setReservations] = useState(initialReservations);
   const [pedidos, setPedidos] = useState(initialPedidos);
   const [balance, setBalance] = useState(initialBalance);
+  const [blockedEmails, setBlockedEmails] = useState(initialBlockedEmails);
+  const [blockedEmailSearch, setBlockedEmailSearch] = useState("");
+  const [blockedEmailForm, setBlockedEmailForm] = useState({ email: "", reason: "" });
+  const [homeGallery, setHomeGallery] = useState(initialHomeGallery);
+  const [isHomeUploading, setIsHomeUploading] = useState(false);
   const [menu, setMenu] = useState(initialMenu);
   const [balanceStartDate, setBalanceStartDate] = useState(initialBalance.startDate);
   const [balanceEndDate, setBalanceEndDate] = useState(initialBalance.endDate);
@@ -142,13 +165,14 @@ export function AdminDashboard({
   const [capacityDraft, setCapacityDraft] = useState(String(initialAvailability.capacity));
   const [isSavingCapacity, setIsSavingCapacity] = useState(false);
   const [reservationSettings, setReservationSettings] = useState(initialReservationSettings);
-  const [savingReservationDay, setSavingReservationDay] = useState<number | null>(null);
+  const [savingReservationDay, setSavingReservationDay] = useState<string | null>(null);
+  const [reservationSettingsDate, setReservationSettingsDate] = useState(today);
   const initialReservationStartDate = getWeekStart(today);
   const [reservationStartDate, setReservationStartDate] = useState(initialReservationStartDate);
   const [reservationEndDate, setReservationEndDate] = useState(() => shiftDateString(initialReservationStartDate, 6));
   const [reservationUserFilter, setReservationUserFilter] = useState("");
   const [form, setForm] = useState<FormState>({
-    date: getNextEnabledReservationDate(today, initialReservationSettings.enabledDayIndexes) ?? today,
+    date: getNextEnabledReservationDate(today, initialReservationSettings.enabledDateStrings) ?? today,
     name: "",
     people: "2",
     phone: "",
@@ -174,6 +198,10 @@ export function AdminDashboard({
   }, []);
 
   const occupancy = availability.capacity > 0 ? Math.round((availability.reserved / availability.capacity) * 100) : 0;
+  const capacityAllowedDates = useMemo(
+    () => reservationSettings.days.filter((day) => day.enabled && !day.isPast).map((day) => day.date),
+    [reservationSettings.days],
+  );
   const visibleError = feedbackSection === activeSection ? error : "";
   const visibleNotice = feedbackSection === activeSection ? notice : "";
 
@@ -326,17 +354,17 @@ export function AdminDashboard({
   }, [activeSection, balanceEndDate, balanceStartDate, loadBalance]);
 
   const loadAvailability = useCallback(async (date: string) => {
-    const response = await fetch(`/api/availability?date=${date}`, { cache: "no-store" });
-    const data = (await response.json()) as Availability;
+    const response = await fetch(`/api/admin/reservas?date=${date}`, { cache: "no-store" });
+    const data = (await response.json()) as AdminReservationsResponse;
 
-    if (response.ok) {
-      applyAvailability(data);
+    if (response.ok && data.availability) {
+      applyAvailability(data.availability);
     }
   }, [applyAvailability]);
 
-  const loadReservationSettings = useCallback(async (silent = false) => {
+  const loadReservationSettings = useCallback(async (silent = false, date = reservationSettingsDate) => {
     try {
-      const response = await fetch("/api/admin/reservas/settings", { cache: "no-store" });
+      const response = await fetch(`/api/admin/reservas/settings?date=${date}`, { cache: "no-store" });
       const data = (await response.json()) as ReservationSettingsResponse;
 
       if (!response.ok || !data.settings) {
@@ -350,7 +378,7 @@ export function AdminDashboard({
         setError(error instanceof Error ? error.message : "No pudimos cargar los dias habilitados.");
       }
     }
-  }, []);
+  }, [reservationSettingsDate]);
 
   const loadReservations = useCallback(
     async (filters: ReservationDateFilters = {}) => {
@@ -635,27 +663,27 @@ export function AdminDashboard({
     }
   }
 
-  async function setReservationDayEnabled(dayOfWeek: number, enabled: boolean) {
+  async function setReservationDayEnabled(date: string, enabled: boolean) {
     const previousSettings = reservationSettings;
+    const dayLabel = formatShortDate(date);
     const nextSettings = {
       ...reservationSettings,
-      days: reservationSettings.days.map((day) => (day.dayOfWeek === dayOfWeek ? { ...day, enabled } : day)),
-      enabledDayIndexes: reservationSettings.days
-        .map((day) => (day.dayOfWeek === dayOfWeek ? { ...day, enabled } : day))
-        .filter((day) => day.enabled)
-        .map((day) => day.dayOfWeek),
+      days: reservationSettings.days.map((day) => (day.date === date ? { ...day, enabled, selectable: enabled && !day.isPast && !day.isFull } : day)),
+      enabledDateStrings: reservationSettings.days
+        .map((day) => (day.date === date ? { ...day, enabled, selectable: enabled && !day.isPast && !day.isFull } : day))
+        .filter((day) => day.selectable)
+        .map((day) => day.date),
     };
-    const dayLabel = reservationSettings.days.find((day) => day.dayOfWeek === dayOfWeek)?.label ?? "Dia";
 
     setFeedbackSection("reservas");
     setError("");
     setNotice("");
     setReservationSettings(nextSettings);
-    setSavingReservationDay(dayOfWeek);
+    setSavingReservationDay(date);
 
     try {
       const response = await fetch("/api/admin/reservas/settings", {
-        body: JSON.stringify({ dayOfWeek, enabled }),
+        body: JSON.stringify({ date, enabled }),
         headers: {
           "Content-Type": "application/json",
         },
@@ -669,8 +697,8 @@ export function AdminDashboard({
 
       setReservationSettings(data.settings);
       let availabilityDateToLoad = availability.date;
-      if (!isWeekDayEnabled(form.date, data.settings.enabledDayIndexes)) {
-        const nextDate = getNextEnabledReservationDate(today, data.settings.enabledDayIndexes);
+      if (!isDateSelectable(form.date, data.settings.enabledDateStrings)) {
+        const nextDate = getNextEnabledReservationDate(today, data.settings.enabledDateStrings);
 
         if (nextDate) {
           setForm((current) => ({ ...current, date: nextDate }));
@@ -678,6 +706,7 @@ export function AdminDashboard({
         }
       }
       setNotice(`${dayLabel} ${enabled ? "habilitado" : "deshabilitado"} para reservas.`);
+      await loadReservationSettings(true, date);
       await loadAvailability(availabilityDateToLoad);
     } catch (error) {
       setReservationSettings(previousSettings);
@@ -687,6 +716,152 @@ export function AdminDashboard({
       setSavingReservationDay(null);
     }
   }
+
+
+  async function loadBlockedEmails(search = blockedEmailSearch) {
+    try {
+      const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+      const response = await fetch(`/api/admin/reservas/blocked-emails${query}`, { cache: "no-store" });
+      const data = (await response.json()) as BlockedEmailsResponse;
+
+      if (!response.ok || !data.blockedEmails) {
+        throw new Error(data.message ?? "No pudimos cargar emails bloqueados.");
+      }
+
+      setBlockedEmails(data.blockedEmails);
+    } catch (error) {
+      setFeedbackSection("reservas");
+      setError(error instanceof Error ? error.message : "No pudimos cargar emails bloqueados.");
+    }
+  }
+
+  async function addBlockedEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedbackSection("reservas");
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/admin/reservas/blocked-emails", {
+        body: JSON.stringify(blockedEmailForm),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = (await response.json()) as BlockedEmailsResponse;
+
+      if (!response.ok || !data.blockedEmail) {
+        throw new Error(data.message ?? "No pudimos bloquear ese email.");
+      }
+
+      setBlockedEmails((current) => [data.blockedEmail as BlockedEmailView, ...current]);
+      setBlockedEmailForm({ email: "", reason: "" });
+      setNotice(`${data.blockedEmail.email} bloqueado para reservas.`);
+    } catch (error) {
+      setFeedbackSection("reservas");
+      setError(error instanceof Error ? error.message : "No pudimos bloquear ese email.");
+    }
+  }
+
+  async function removeBlockedEmail(blocked: BlockedEmailView) {
+    if (!window.confirm(`Desbloquear ${blocked.email}?`)) {
+      return;
+    }
+
+    setFeedbackSection("reservas");
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/admin/reservas/blocked-emails?id=${blocked.id}`, { method: "DELETE" });
+      const data = (await response.json()) as BlockedEmailsResponse;
+
+      if (!response.ok) {
+        throw new Error(data.message ?? "No pudimos desbloquear ese email.");
+      }
+
+      setBlockedEmails((current) => current.filter((item) => item.id !== blocked.id));
+      setNotice(`${blocked.email} desbloqueado.`);
+    } catch (error) {
+      setFeedbackSection("reservas");
+      setError(error instanceof Error ? error.message : "No pudimos desbloquear ese email.");
+    }
+  }
+
+  async function uploadHomeGalleryImage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
+
+    setFeedbackSection("home");
+    setError("");
+    setNotice("");
+    setIsHomeUploading(true);
+
+    try {
+      const response = await fetch("/api/admin/home/gallery", { body: formData, method: "POST" });
+      const data = (await response.json()) as HomeGalleryResponse;
+
+      if (!response.ok || !data.image) {
+        throw new Error(data.message ?? "No pudimos cargar la foto.");
+      }
+
+      setHomeGallery((current) => [...current, data.image as HomeGalleryImageView].slice(0, 10));
+      formElement.reset();
+      setNotice("Foto agregada a HOME.");
+    } catch (error) {
+      setFeedbackSection("home");
+      setError(error instanceof Error ? error.message : "No pudimos cargar la foto.");
+    } finally {
+      setIsHomeUploading(false);
+    }
+  }
+
+  async function replaceHomeGalleryImage(id: string, file: File | null) {
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    setFeedbackSection("home");
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/admin/home/gallery?id=${id}`, { body: formData, method: "PATCH" });
+      const data = (await response.json()) as HomeGalleryResponse;
+
+      if (!response.ok || !data.image) {
+        throw new Error(data.message ?? "No pudimos reemplazar la foto.");
+      }
+
+      setHomeGallery((current) => current.map((image) => (image.id === id ? data.image as HomeGalleryImageView : image)));
+      setNotice("Foto reemplazada.");
+    } catch (error) {
+      setFeedbackSection("home");
+      setError(error instanceof Error ? error.message : "No pudimos reemplazar la foto.");
+    }
+  }
+
+  async function deleteHomeGalleryImage(id: string) {
+    if (!window.confirm("Eliminar esta foto de HOME?")) return;
+    setFeedbackSection("home");
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch(`/api/admin/home/gallery?id=${id}`, { method: "DELETE" });
+      const data = (await response.json()) as HomeGalleryResponse;
+
+      if (!response.ok) {
+        throw new Error(data.message ?? "No pudimos eliminar la foto.");
+      }
+
+      setHomeGallery((current) => current.filter((image) => image.id !== id));
+      setNotice("Foto eliminada de HOME.");
+    } catch (error) {
+      setFeedbackSection("home");
+      setError(error instanceof Error ? error.message : "No pudimos eliminar la foto.");
+    }
+  }
+
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -834,7 +1009,7 @@ export function AdminDashboard({
   function resetForm() {
     setEditingId(null);
     setForm({
-      date: getNextEnabledReservationDate(today, reservationSettings.enabledDayIndexes) ?? today,
+      date: getNextEnabledReservationDate(today, reservationSettings.enabledDateStrings) ?? today,
       name: "",
       people: "2",
       phone: "",
@@ -876,6 +1051,11 @@ export function AdminDashboard({
                 active={activeSection === "reservas"}
                 label="Reservas"
                 onClick={() => selectAdminSection("reservas")}
+              />
+              <AdminNavButton
+                active={activeSection === "home"}
+                label="Home"
+                onClick={() => selectAdminSection("home")}
               />
               <AdminNavButton
                 active={activeSection === "pedidos"}
@@ -929,12 +1109,14 @@ export function AdminDashboard({
                 <form className="rounded-3xl border border-amber-200/15 bg-black/35 p-5" onSubmit={saveDailyCapacity}>
                   <p className="text-sm font-black uppercase text-amber-300">Cupo del dia</p>
                   <p className="mt-2 text-sm leading-6 text-amber-50/55">
-                    Viernes, sabados y domingos abren con 40 lugares por defecto. Los demas dias quedan en 0 hasta que les cargues cupo.
+                    Viernes, sabados y domingos abren con 40 lugares por defecto. Los demas dias quedan cerrados salvo que los habilites.
                   </p>
                   <div className="mt-4 grid gap-3">
                     <label className="grid gap-2 text-sm font-black text-amber-50/80">
                       Dia
                       <DatePicker
+                        allowedDates={capacityAllowedDates}
+                        disabledBefore={today}
                         label="Dia del cupo"
                         onChange={(date) => {
                           void loadAvailability(date);
@@ -972,8 +1154,13 @@ export function AdminDashboard({
                 </form>
 
                 <ReservationEnabledDaysCard
+                  onDateChange={(date) => {
+                    setReservationSettingsDate(date);
+                    void loadReservationSettings(false, date);
+                  }}
                   onToggle={setReservationDayEnabled}
                   savingDay={savingReservationDay}
+                  selectedDate={reservationSettingsDate}
                   settings={reservationSettings}
                 />
 
@@ -991,7 +1178,7 @@ export function AdminDashboard({
                       value={form.phone}
                     />
                     <AdminInput
-                      allowedWeekDays={reservationSettings.enabledDayIndexes}
+                      allowedDates={reservationSettings.enabledDateStrings}
                       label="Fecha"
                       onChange={handleFormDateChange}
                       type="date"
@@ -1032,6 +1219,8 @@ export function AdminDashboard({
                   </div>
                 </form>
               </>
+            ) : activeSection === "home" ? (
+              <HomeSummary images={homeGallery} />
             ) : activeSection === "pedidos" ? (
               <OrdersSummary pedidos={pedidos} />
             ) : activeSection === "menu" ? (
@@ -1118,7 +1307,27 @@ export function AdminDashboard({
               reservations={reservations}
               startDate={reservationStartDate}
             />
+            <BlockedEmailsPanel
+              blockedEmails={blockedEmails}
+              form={blockedEmailForm}
+              onFormChange={setBlockedEmailForm}
+              onReload={loadBlockedEmails}
+              onRemove={removeBlockedEmail}
+              onSearchChange={setBlockedEmailSearch}
+              onSubmit={addBlockedEmail}
+              search={blockedEmailSearch}
+            />
           </section>
+          ) : activeSection === "home" ? (
+            <HomeAdminPanel
+              error={visibleError}
+              images={homeGallery}
+              isUploading={isHomeUploading}
+              notice={visibleNotice}
+              onDelete={deleteHomeGalleryImage}
+              onReplace={replaceHomeGalleryImage}
+              onUpload={uploadHomeGalleryImage}
+            />
           ) : activeSection === "pedidos" ? (
             <>
               {newOrderAlert ? <NewOrderScreenFlash key={newOrderAlert.id} pedido={newOrderAlert} /> : null}
@@ -1159,7 +1368,7 @@ export function AdminDashboard({
 }
 
 function AdminInput({
-  allowedWeekDays,
+  allowedDates,
   label,
   max,
   min,
@@ -1168,7 +1377,7 @@ function AdminInput({
   type = "text",
   value,
 }: {
-  allowedWeekDays?: number[];
+  allowedDates?: string[];
   label: string;
   max?: string;
   min?: string;
@@ -1182,10 +1391,10 @@ function AdminInput({
       <label className="grid gap-2 text-sm font-black text-amber-50/80">
         {label}
         <DatePicker
-          allowedWeekDays={allowedWeekDays}
+          allowedDates={allowedDates}
           label={label}
           onChange={onChange}
-          showAvailabilityLegend={Boolean(allowedWeekDays)}
+          showAvailabilityLegend={Boolean(allowedDates)}
           value={value}
         />
       </label>
@@ -1208,72 +1417,318 @@ function AdminInput({
   );
 }
 
+function HomeAdminPanel({
+  error,
+  images,
+  isUploading,
+  notice,
+  onDelete,
+  onReplace,
+  onUpload,
+}: {
+  error: string;
+  images: HomeGalleryImageView[];
+  isUploading: boolean;
+  notice: string;
+  onDelete: (id: string) => void;
+  onReplace: (id: string, file: File | null) => void;
+  onUpload: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const remaining = Math.max(10 - images.length, 0);
+
+  return (
+    <section className="rounded-3xl border border-amber-200/15 bg-black/35 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase text-amber-300">Home</p>
+          <h2 className="mt-1 text-2xl font-black uppercase text-white">Galería principal</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-50/60">
+            Estas fotos alimentan la pasarela de la página de inicio. Máximo 10 imágenes optimizadas por Cloudinary.
+          </p>
+        </div>
+        <span className="w-fit rounded-full border border-amber-200/15 px-4 py-2 text-xs font-black uppercase text-amber-100">
+          {images.length}/10 fotos
+        </span>
+      </div>
+
+      {notice ? (
+        <p className="mt-4 rounded-xl border border-emerald-300/25 bg-emerald-400/15 px-4 py-3 text-sm font-bold text-emerald-50">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-4 rounded-xl border border-red-300/25 bg-red-500/15 px-4 py-3 text-sm font-bold text-red-50">
+          {error}
+        </p>
+      ) : null}
+
+      <form className="mt-5 grid gap-3 rounded-3xl border border-amber-200/10 bg-[#0c0805] p-4 md:grid-cols-[1fr_1fr_auto] md:items-end" onSubmit={onUpload}>
+        <label className="grid gap-2 text-sm font-black text-amber-50/80">
+          Imagen
+          <input
+            accept="image/avif,image/jpeg,image/png,image/webp"
+            className="min-h-12 rounded-2xl border border-amber-200/20 bg-white/10 px-4 py-3 text-sm text-amber-50 file:mr-3 file:rounded-xl file:border-0 file:bg-amber-300 file:px-3 file:py-2 file:text-sm file:font-black file:text-[#140b04]"
+            disabled={images.length >= 10 || isUploading}
+            name="file"
+            required
+            type="file"
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-black text-amber-50/80">
+          Texto alternativo
+          <input
+            className="min-h-12 rounded-2xl border border-amber-200/20 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-amber-50/35 focus:border-amber-300/70"
+            maxLength={120}
+            name="alt"
+            placeholder="Barra, mesas, tragos..."
+          />
+        </label>
+        <button
+          className="min-h-12 rounded-2xl bg-amber-300 px-5 text-sm font-black uppercase text-[#140b04] transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-55"
+          disabled={images.length >= 10 || isUploading}
+          type="submit"
+        >
+          {isUploading ? "Subiendo..." : remaining > 0 ? "Agregar foto" : "Límite completo"}
+        </button>
+      </form>
+
+      {images.length ? (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {images.map((image, index) => (
+            <article className="overflow-hidden rounded-3xl border border-amber-200/12 bg-[#120c08] shadow-xl shadow-black/20" key={image.id}>
+              <div className="relative aspect-[4/3] bg-white/[.04]">
+                <Image
+                  alt={image.alt ?? "Foto de Rustic Pub"}
+                  className="object-cover"
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                  src={image.imageUrl}
+                />
+                <span className="absolute left-3 top-3 rounded-full bg-black/65 px-3 py-1 text-xs font-black text-white backdrop-blur">
+                  #{index + 1}
+                </span>
+              </div>
+              <div className="grid gap-3 p-4">
+                <p className="line-clamp-2 min-h-10 text-sm font-bold leading-5 text-amber-50/70">
+                  {image.alt || "Sin texto alternativo"}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-amber-200/20 px-3 text-center text-sm font-black text-amber-100 transition hover:bg-amber-200/10">
+                    Reemplazar
+                    <input
+                      accept="image/avif,image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={(event) => {
+                        onReplace(image.id, event.currentTarget.files?.[0] ?? null);
+                        event.currentTarget.value = "";
+                      }}
+                      type="file"
+                    />
+                  </label>
+                  <button
+                    className="min-h-11 rounded-xl border border-red-300/20 px-3 text-sm font-black text-red-50 transition hover:bg-red-400/10"
+                    onClick={() => onDelete(image.id)}
+                    type="button"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-3xl border border-dashed border-amber-200/20 bg-white/[.03] p-8 text-center">
+          <p className="text-lg font-black text-white">Todavía no hay fotos para la home.</p>
+          <p className="mt-2 text-sm leading-6 text-amber-50/55">Cargá la primera imagen para activar la pasarela visual del inicio.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BlockedEmailsPanel({
+  blockedEmails,
+  form,
+  onFormChange,
+  onReload,
+  onRemove,
+  onSearchChange,
+  onSubmit,
+  search,
+}: {
+  blockedEmails: BlockedEmailView[];
+  form: { email: string; reason: string };
+  onFormChange: (form: { email: string; reason: string }) => void;
+  onReload: (search?: string) => void;
+  onRemove: (blocked: BlockedEmailView) => void;
+  onSearchChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  search: string;
+}) {
+  return (
+    <section className="mt-5 rounded-3xl border border-amber-200/15 bg-[#120c08] p-4 sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase text-amber-300">Usuarios bloqueados</p>
+          <h3 className="mt-1 text-2xl font-black uppercase text-white">Emails sin permiso de reserva</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-50/58">
+            Si un email figura acá, no puede iniciar el flujo de reserva ni confirmar una reserva desde Google.
+          </p>
+        </div>
+        <form
+          className="grid gap-2 sm:grid-cols-[1fr_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onReload(search);
+          }}
+        >
+          <input
+            className="min-h-11 rounded-xl border border-amber-200/20 bg-white/10 px-4 text-sm text-white outline-none transition placeholder:text-amber-50/35 focus:border-amber-300/70"
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Buscar email"
+            type="search"
+            value={search}
+          />
+          <button className="min-h-11 rounded-xl border border-amber-200/20 px-4 text-sm font-black text-amber-100 transition hover:bg-amber-200/10" type="submit">
+            Buscar
+          </button>
+        </form>
+      </div>
+
+      <form className="mt-5 grid gap-3 rounded-3xl border border-amber-200/10 bg-black/35 p-4 lg:grid-cols-[1fr_1.2fr_auto] lg:items-end" onSubmit={onSubmit}>
+        <label className="grid gap-2 text-sm font-black text-amber-50/80">
+          Email Google
+          <input
+            autoComplete="off"
+            className="min-h-12 rounded-2xl border border-amber-200/20 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-amber-50/35 focus:border-amber-300/70"
+            inputMode="email"
+            onChange={(event) => onFormChange({ ...form, email: event.target.value })}
+            placeholder="usuario@gmail.com"
+            required
+            type="email"
+            value={form.email}
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-black text-amber-50/80">
+          Motivo
+          <input
+            className="min-h-12 rounded-2xl border border-amber-200/20 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-amber-50/35 focus:border-amber-300/70"
+            maxLength={240}
+            onChange={(event) => onFormChange({ ...form, reason: event.target.value })}
+            placeholder="Reservas falsas, incumplimiento..."
+            value={form.reason}
+          />
+        </label>
+        <button className="min-h-12 rounded-2xl bg-amber-300 px-5 text-sm font-black uppercase text-[#140b04] transition hover:bg-amber-200" type="submit">
+          Bloquear
+        </button>
+      </form>
+
+      {blockedEmails.length ? (
+        <div className="mt-5 grid gap-3">
+          {blockedEmails.map((blocked) => (
+            <article className="grid gap-3 rounded-2xl border border-amber-200/10 bg-white/[.04] p-4 lg:grid-cols-[1fr_auto] lg:items-center" key={blocked.id}>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong className="break-all text-base font-black text-white">{blocked.email}</strong>
+                  <span className="rounded-full bg-red-400/15 px-3 py-1 text-xs font-black uppercase text-red-100">Bloqueado</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-amber-50/58">
+                  {blocked.reason || "Sin motivo cargado"} · {formatShortDate(blocked.createdAt.slice(0, 10))}
+                </p>
+                {blocked.blockedBy ? <p className="text-xs font-bold text-amber-50/40">Bloqueado por {blocked.blockedBy}</p> : null}
+              </div>
+              <button
+                className="min-h-11 rounded-xl border border-emerald-300/20 px-4 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/10"
+                onClick={() => onRemove(blocked)}
+                type="button"
+              >
+                Desbloquear
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-3xl border border-dashed border-amber-200/20 bg-white/[.03] p-6 text-center">
+          <p className="font-black text-white">No hay emails bloqueados.</p>
+          <p className="mt-2 text-sm text-amber-50/55">Los usuarios habilitados pueden reservar normalmente.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ReservationEnabledDaysCard({
+  onDateChange,
   onToggle,
   savingDay,
+  selectedDate,
   settings,
 }: {
-  onToggle: (dayOfWeek: number, enabled: boolean) => void;
-  savingDay: number | null;
+  onDateChange: (date: string) => void;
+  onToggle: (date: string, enabled: boolean) => void;
+  savingDay: string | null;
+  selectedDate: string;
   settings: ReservationSettingsView;
 }) {
-  const enabledCount = settings.enabledDayIndexes.length;
+  const selectedDay = settings.days.find((day) => day.date === selectedDate);
+  const enabledCount = settings.days.filter((day) => day.enabled).length;
 
   return (
     <article className="rounded-3xl border border-amber-200/15 bg-[#120c08] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-black uppercase text-amber-300">Días habilitados</p>
-          <h3 className="mt-1 text-lg font-black text-white">Reservas por semana</h3>
+          <h3 className="mt-1 text-lg font-black text-white">Calendario admin</h3>
         </div>
         <span className="rounded-full border border-emerald-200/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase text-emerald-100">
           {enabledCount}/7
         </span>
       </div>
       <p className="mt-2 text-sm leading-6 text-amber-50/55">
-        Los clientes solo pueden reservar en los días activos. Jueves a domingo vienen habilitados por defecto.
+        Seleccioná un día específico y habilitalo o bloquealo. Los días pasados no se pueden editar.
       </p>
-      <div className="mt-4 grid gap-2">
-        {settings.days.map((day) => {
-          const isSaving = savingDay === day.dayOfWeek;
-
-          return (
+      <div className="mt-4 grid gap-3">
+        <DatePicker disabledBefore={getTodayDateStringForClient()} label="Día" onChange={onDateChange} value={selectedDate} />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {settings.days.map((day) => (
             <button
-              className={`group flex min-h-12 items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
-                day.enabled
-                  ? "border-emerald-200/25 bg-emerald-400/10 text-emerald-50"
-                  : "border-amber-200/10 bg-white/[.04] text-amber-50/58 hover:bg-white/[.07]"
-              } disabled:cursor-wait disabled:opacity-60`}
-              disabled={isSaving}
-              key={day.dayOfWeek}
-              onClick={() => onToggle(day.dayOfWeek, !day.enabled)}
+              className={`rounded-2xl border px-3 py-3 text-left transition ${
+                day.date === selectedDate
+                  ? "border-amber-300 bg-amber-300 text-[#140b04]"
+                  : day.enabled
+                    ? "border-emerald-200/25 bg-emerald-400/10 text-emerald-50"
+                    : "border-amber-200/10 bg-white/[.04] text-amber-50/58"
+              } ${day.isPast ? "cursor-not-allowed opacity-35" : "hover:bg-white/[.08]"}`}
+              disabled={day.isPast}
+              key={day.date}
+              onClick={() => onDateChange(day.date)}
               type="button"
             >
-              <span>
-                <span className="block text-sm font-black">{day.label}</span>
-                <span className="mt-0.5 block text-xs font-bold uppercase opacity-65">
-                  {day.enabled ? "Disponible" : "No disponible"}
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
-                className={`flex h-7 w-12 items-center rounded-full p-1 transition ${
-                  day.enabled ? "bg-emerald-300" : "bg-white/15"
-                }`}
-              >
-                <span
-                  className={`h-5 w-5 rounded-full bg-white shadow-lg transition ${
-                    day.enabled ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
+              <span className="block text-xs font-black uppercase">{weekdayLabel(day.date)}</span>
+              <span className="mt-1 block text-lg font-black">{new Date(`${day.date}T00:00:00.000Z`).getUTCDate()}</span>
+              <span className="mt-1 block text-[10px] font-black uppercase opacity-70">
+                {day.isPast ? "Pasado" : day.enabled ? "Disponible" : "No disponible"}
               </span>
             </button>
-          );
-        })}
+          ))}
+        </div>
+        <button
+          className={`min-h-12 rounded-2xl px-4 text-sm font-black uppercase transition ${
+            selectedDay?.enabled ? "bg-red-400/15 text-red-50 hover:bg-red-400/20" : "bg-emerald-300 text-emerald-950 hover:bg-emerald-200"
+          } disabled:cursor-not-allowed disabled:opacity-55`}
+          disabled={!selectedDay || selectedDay.isPast || savingDay === selectedDate}
+          onClick={() => selectedDay && onToggle(selectedDate, !selectedDay.enabled)}
+          type="button"
+        >
+          {savingDay === selectedDate ? "Guardando..." : selectedDay?.enabled ? "Deshabilitar día" : "Habilitar día"}
+        </button>
       </div>
     </article>
   );
 }
+
 
 function AdminNavButton({
   active,
@@ -1359,6 +1814,27 @@ function MenuSummary({ menu }: { menu: MenuAdminView }) {
         </div>
         <p className="mt-2 text-sm leading-6 text-amber-50/60">
           La carta se lee desde base de datos en cada vista publica.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function HomeSummary({ images }: { images: HomeGalleryImageView[] }) {
+  return (
+    <article className="overflow-hidden rounded-3xl border border-amber-200/15 bg-[#120c08] shadow-xl shadow-black/20">
+      <div className="bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,.2),transparent_42%),linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,0))] p-5">
+        <p className="text-sm font-black uppercase text-amber-300">Home</p>
+        <strong className="mt-4 block text-5xl font-black leading-none text-white">{images.length}</strong>
+        <p className="mt-2 text-sm font-bold text-amber-50/60">fotos publicadas</p>
+      </div>
+      <div className="grid gap-2 p-5 text-sm font-bold">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl bg-amber-400/12 px-3 py-2 text-amber-100">
+          <span>Límite</span>
+          <strong>{Math.max(10 - images.length, 0)} libres</strong>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-amber-50/60">
+          La galería se muestra automáticamente en la página principal con imágenes optimizadas.
         </p>
       </div>
     </article>
@@ -2512,25 +2988,19 @@ function getDateRange(startDate: string, endDate: string) {
   return dates.length ? dates : [startDate];
 }
 
-function isWeekDayEnabled(value: string, enabledDayIndexes: number[]) {
-  if (!enabledDayIndexes.length) {
-    return false;
-  }
-
-  const day = new Date(`${value}T00:00:00.000Z`).getUTCDay();
-
-  return enabledDayIndexes.includes(day);
+function isDateSelectable(value: string, enabledDateStrings: string[]) {
+  return enabledDateStrings.includes(value);
 }
 
-function getNextEnabledReservationDate(fromDate: string, enabledDayIndexes: number[]) {
-  if (!enabledDayIndexes.length) {
+function getNextEnabledReservationDate(fromDate: string, enabledDateStrings: string[]) {
+  if (!enabledDateStrings.length) {
     return null;
   }
 
   let current = fromDate;
 
   for (let index = 0; index < 370; index += 1) {
-    if (isWeekDayEnabled(current, enabledDayIndexes)) {
+    if (isDateSelectable(current, enabledDateStrings)) {
       return current;
     }
 
@@ -2538,6 +3008,18 @@ function getNextEnabledReservationDate(fromDate: string, enabledDayIndexes: numb
   }
 
   return null;
+}
+
+function getTodayDateStringForClient() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function chartDateLabel(value: string) {

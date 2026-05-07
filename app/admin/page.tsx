@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { hasAdminSession } from "../../lib/admin-auth";
 import type { BalanceView } from "../../lib/balance";
+import { listBlockedEmails } from "../../lib/blocked-emails";
+import { listHomeGalleryImages } from "../../lib/home-gallery";
 import { MENU_CATEGORY_OPTIONS, type MenuAdminView } from "../../lib/menu-types";
 import { getAvailability, getReservationSettings, getTodayDateString, listReservations } from "../../lib/reservations";
 import { AdminDashboard } from "./AdminDashboard";
@@ -24,11 +26,15 @@ export default async function AdminPage() {
   const today = getTodayDateString();
   const reservationStartDate = getWeekStart(today);
   const reservationEndDate = shiftDateString(reservationStartDate, 6);
-  const [reservations, availability, reservationSettings] = await Promise.all([
+  const [reservations, reservationSettings, homeGallery, blockedEmails] = await Promise.all([
     listReservations({ endDate: reservationEndDate, startDate: reservationStartDate }),
-    getAvailability(today),
     getReservationSettings(),
+    listHomeGalleryImages(),
+    listBlockedEmails(),
   ]);
+  const initialAvailabilityDate =
+    reservationSettings.days.find((day) => day.enabled && !day.isPast)?.date ?? today;
+  const availability = await getAvailability(initialAvailabilityDate);
   const balance: BalanceView = {
     days: [],
     endDate: today,
@@ -47,6 +53,8 @@ export default async function AdminPage() {
       initialBalance={balance}
       initialMenu={menu}
       initialPedidos={[]}
+      initialHomeGallery={homeGallery}
+      initialBlockedEmails={blockedEmails}
       initialReservations={reservations}
       initialReservationSettings={reservationSettings}
       today={today}

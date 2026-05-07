@@ -1,5 +1,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages */
 
+import type { HomeGalleryImageView } from "../../lib/home-gallery";
+import { HomeGalleryCarousel } from "./HomeGalleryCarousel";
 import { SiteFooter } from "./SiteFooter";
 
 const MAP_DIRECTIONS_URL = "https://maps.app.goo.gl/yfZzvNXGbASTPVUH8";
@@ -12,7 +14,7 @@ const benefits = [
   ["03", "Plan redondo", "Tragos, comida y mesa lista para venir con amigos o pareja."],
 ];
 
-export function RusticPubLanding() {
+export function RusticPubLanding({ homeGallery }: { homeGallery: HomeGalleryImageView[] }) {
   return (
     <main className="min-h-screen scroll-smooth bg-[#070504] text-[#fff6e7]">
       <style>{`
@@ -35,7 +37,7 @@ export function RusticPubLanding() {
 
       <HeroSection />
       <BenefitsSection />
-      <ReservationSection />
+      <HomeGalleryCarousel images={homeGallery} />
       <LocationSection />
       <SiteFooter />
     </main>
@@ -65,12 +67,6 @@ function HeroSection() {
             alt=""
           />
           <span className="text-sm font-black uppercase tracking-normal text-[#14110d]">Rustic Pub</span>
-        </a>
-        <a
-          className="hidden rounded-full border border-black/15 bg-[#d8c5aa]/80 px-4 py-2 text-sm font-black text-[#14110d] shadow-xl shadow-black/10 backdrop-blur transition hover:bg-amber-200 sm:inline-flex"
-          href="/reserva"
-        >
-          Reservar
         </a>
       </header>
 
@@ -125,32 +121,6 @@ function BenefitsSection() {
               <p className="mt-3 leading-6 text-amber-50/66">{copy}</p>
             </article>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ReservationSection() {
-  return (
-    <section
-      className="border-y border-[#d8c5aa]/15 bg-[linear-gradient(135deg,rgba(216,197,170,.24),rgba(18,12,8,.98)_40%,rgba(7,5,4,1))] px-4 py-14 sm:px-6 lg:px-10 lg:py-20"
-      id="reserva"
-    >
-      <div className="mx-auto max-w-5xl">
-        <p className="mb-3 text-xs font-black uppercase text-amber-300">Reserva</p>
-        <h2 className="text-4xl font-black uppercase leading-none text-white sm:text-6xl">Reserva tu lugar</h2>
-        <p className="mt-5 max-w-2xl text-lg leading-8 text-amber-50/78">
-          La reserva se hace en una pagina separada para que el proceso sea claro, rapido y sin distracciones.
-          Capacidad diaria maxima: 40 personas.
-        </p>
-        <div className="mt-7 grid gap-3 sm:flex">
-          <a
-            className="inline-flex min-h-14 items-center justify-center rounded-xl bg-[#d8c5aa] px-6 text-base font-black text-[#130b04] shadow-[0_18px_45px_rgba(216,197,170,.18)] transition hover:-translate-y-0.5 hover:bg-amber-200"
-            href="/reserva"
-          >
-            Ir a reserva
-          </a>
         </div>
       </div>
     </section>

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "../../../auth";
+import { BlockedEmailError, assertEmailCanReserve } from "../../../lib/blocked-emails";
 import { checkRateLimit } from "../../../lib/rate-limit";
 import { verifyRecaptchaToken } from "../../../lib/recaptcha";
 import {
   ReservationError,
+  assertCurrentWeekReservationDate,
   createAuthenticatedReservation,
   getAvailability,
+  getTodayDateString,
   parseCreateReservationInput,
 } from "../../../lib/reservations";
 
@@ -19,6 +22,8 @@ export async function POST(request: Request) {
     if (!session?.user?.id || !session.user.email) {
       throw new ReservationError("unauthorized", "Necesitas iniciar sesion con Google para reservar.", 401);
     }
+
+    await assertEmailCanReserve(session.user.email);
 
     assertSameOrigin(request);
 
@@ -113,17 +118,34 @@ function addEnvOrigin(origins: Set<string>, value: string | undefined) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const availability = await getAvailability(searchParams.get("date") ?? undefined);
+  const date = searchParams.get("date") ?? getTodayDateString();
 
-  return NextResponse.json(availability, {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+  try {
+    assertCurrentWeekReservationDate(date);
+    const availability = await getAvailability(date);
+
+    return NextResponse.json(availability, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error) {
+    return reservationErrorResponse(error);
+  }
 }
 
 function reservationErrorResponse(error: unknown) {
   if (error instanceof ReservationError) {
+    return NextResponse.json(
+      {
+        code: error.code,
+        message: error.message,
+      },
+      { status: error.statusCode },
+    );
+  }
+
+  if (error instanceof BlockedEmailError) {
     return NextResponse.json(
       {
         code: error.code,

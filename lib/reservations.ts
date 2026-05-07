@@ -1,10 +1,11 @@
 import { Prisma, PrismaClient, Reservation, ReservationStatus } from "@prisma/client";
+import { assertEmailCanReserve } from "./blocked-emails";
 import { prisma } from "./prisma";
 
 export const DEFAULT_RESERVATION_CAPACITY = 40;
 export const MAX_RESERVATION_CAPACITY = 500;
 
-const DEFAULT_ENABLED_RESERVATION_DAYS = new Set([0, 4, 5, 6]);
+const DEFAULT_ENABLED_RESERVATION_DAYS = new Set([0, 5, 6]);
 const MAX_RESERVATIONS_PER_IP_DAY = 3;
 const MAX_RESERVATIONS_PER_USER_DATE = 2;
 const SERIALIZATION_RETRIES = 4;
@@ -23,35 +24,24 @@ export const RESERVATION_WEEK_DAYS = [
 type ReservationDb = PrismaClient | Prisma.TransactionClient;
 type ReservationDayCapacityRecord = {
   capacity: number;
-};
-type EnabledReservationDayRecord = {
-  dayOfWeek: number;
-  enabled: boolean;
-  updatedAt: Date | null;
+  enabled: boolean | null;
 };
 type ReservationDayCapacityDelegate = {
   findUnique: (args: {
-    select?: { capacity: true };
+    select?: { capacity: true; enabled: true };
     where: { date: Date };
   }) => Promise<ReservationDayCapacityRecord | null>;
+  findMany: (args: {
+    orderBy?: { date: "asc" | "desc" };
+    select: { capacity: true; date: true; enabled: true };
+    where: { date: { gte: Date; lte: Date } };
+  }) => Promise<(ReservationDayCapacityRecord & { date: Date })[]>;
   upsert: (args: {
-    create: { capacity: number; date: Date };
-    select?: { capacity: true };
-    update: { capacity: number };
+    create: { capacity?: number; date: Date; enabled?: boolean };
+    select?: { capacity: true; enabled: true };
+    update: { capacity?: number; enabled?: boolean };
     where: { date: Date };
   }) => Promise<ReservationDayCapacityRecord>;
-};
-type EnabledReservationDayDelegate = {
-  findMany: (args: {
-    orderBy?: { dayOfWeek: "asc" | "desc" };
-    select: { dayOfWeek: true; enabled: true; updatedAt: true };
-  }) => Promise<EnabledReservationDayRecord[]>;
-  upsert: (args: {
-    create: { dayOfWeek: number; enabled: boolean };
-    select: { dayOfWeek: true; enabled: true; updatedAt: true };
-    update: { enabled: boolean };
-    where: { dayOfWeek: number };
-  }) => Promise<EnabledReservationDayRecord>;
 };
 type ReservationRecord = Reservation & {
   user?: {
@@ -71,8 +61,11 @@ export type Availability = {
   available: number;
   isHabitualOpenDay: boolean;
   isReservationDayEnabled: boolean;
-  enabledDayIndexes: number[];
+  enabledDateStrings: string[];
   dayLabel: string;
+  weekEndDate: string;
+  weekStartDate: string;
+  weekDays: ReservationWeekDayAvailability[];
 };
 
 export type ReservationInput = {
@@ -100,21 +93,29 @@ export type ReservationCapacityInput = {
   date: string;
 };
 
-export type EnabledReservationDayInput = {
-  dayOfWeek: number;
+export type ReservationDateEnabledInput = {
+  date: string;
   enabled: boolean;
 };
 
-export type EnabledReservationDayView = {
+export type ReservationWeekDayAvailability = {
+  available: number;
+  capacity: number;
+  date: string;
+  dayLabel: string;
   dayOfWeek: number;
   enabled: boolean;
-  label: string;
-  shortLabel: string;
+  isFull: boolean;
+  isPast: boolean;
+  reserved: number;
+  selectable: boolean;
 };
 
 export type ReservationSettingsView = {
-  days: EnabledReservationDayView[];
-  enabledDayIndexes: number[];
+  days: ReservationWeekDayAvailability[];
+  enabledDateStrings: string[];
+  weekEndDate: string;
+  weekStartDate: string;
   updatedAt: string | null;
 };
 
@@ -247,59 +248,45 @@ export function parseReservationCapacityInput(payload: unknown): ReservationCapa
   return { capacity, date };
 }
 
-export function parseEnabledReservationDayInput(payload: unknown): EnabledReservationDayInput {
+export function parseReservationDateEnabledInput(payload: unknown): ReservationDateEnabledInput {
   const body = asRecord(payload);
-  const dayValue = body.dayOfWeek ?? body.diaSemana;
+  const dateValue = body.date ?? body.fecha;
   const enabledValue = body.enabled ?? body.habilitado;
-  const dayOfWeek = Number(dayValue);
+  const date = typeof dateValue === "string" ? parseDateString(dateValue) : "";
 
-  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
-    throw new ReservationError("invalid_day", "Ingresa un día de la semana válido.");
+  if (!date) {
+    throw new ReservationError("invalid_date", "Ingresa una fecha valida.");
   }
 
   if (typeof enabledValue !== "boolean") {
-    throw new ReservationError("invalid_enabled", "Indica si el día está habilitado o no.");
+    throw new ReservationError("invalid_enabled", "Indica si el dia esta habilitado o no.");
   }
 
-  return { dayOfWeek, enabled: enabledValue };
+  if (date < getTodayDateString()) {
+    throw new ReservationError("past_date", "No se pueden editar dias pasados.", 400);
+  }
+
+  return { date, enabled: enabledValue };
 }
 
-export async function getReservationSettings(db: ReservationDb = prisma): Promise<ReservationSettingsView> {
-  const rows = await findEnabledReservationDays(db);
-  const rowByDay = new Map(rows.map((row) => [row.dayOfWeek, row]));
-  const days = RESERVATION_WEEK_DAYS.map((day) => {
-    const row = rowByDay.get(day.dayOfWeek);
-    const enabled = row?.enabled ?? DEFAULT_ENABLED_RESERVATION_DAYS.has(day.dayOfWeek);
+export async function getReservationSettings(date = getTodayDateString(), db: ReservationDb = prisma): Promise<ReservationSettingsView> {
+  return getReservationWeekAvailability(date, db);
+}
 
-    return {
-      ...day,
-      enabled,
-    };
-  });
-  const updatedAt =
-    rows
-      .map((row) => row.updatedAt?.getTime() ?? 0)
-      .sort((a, b) => b - a)[0] ?? 0;
+export async function updateReservationDateEnabled(input: ReservationDateEnabledInput) {
+  const { date, enabled } = parseReservationDateEnabledInput(input);
+  await upsertReservationDateEnabled(date, enabled);
 
   return {
-    days,
-    enabledDayIndexes: days.filter((day) => day.enabled).map((day) => day.dayOfWeek),
-    updatedAt: updatedAt ? new Date(updatedAt).toISOString() : null,
+    availability: await getAvailability(date),
+    settings: await getReservationSettings(date),
   };
 }
 
-export async function updateEnabledReservationDay(input: EnabledReservationDayInput) {
-  const { dayOfWeek, enabled } = parseEnabledReservationDayInput(input);
-  await upsertEnabledReservationDay(dayOfWeek, enabled);
-
-  return {
-    settings: await getReservationSettings(),
-  };
-}
 
 export async function getAvailability(date = getTodayDateString(), db: ReservationDb = prisma, excludeId?: string) {
   const dateString = parseDateString(date);
-  const [confirmed, dayCapacity, settings] = await Promise.all([
+  const [confirmed, dayCapacity, weekSettings] = await Promise.all([
     db.reservation.aggregate({
       _sum: { people: true },
       where: {
@@ -309,9 +296,9 @@ export async function getAvailability(date = getTodayDateString(), db: Reservati
       },
     }),
     findReservationDayCapacity(db, dateString),
-    getReservationSettings(db),
+    getReservationWeekAvailability(getTodayDateString(), db),
   ]);
-  const isReservationDayEnabled = settings.enabledDayIndexes.includes(getDayOfWeek(dateString));
+  const isReservationDayEnabled = getDateEnabledState(dateString, dayCapacity);
   const capacity = isReservationDayEnabled ? dayCapacity?.capacity ?? DEFAULT_RESERVATION_CAPACITY : 0;
   const reserved = confirmed._sum.people ?? 0;
   const available = Math.max(capacity - reserved, 0);
@@ -322,9 +309,12 @@ export async function getAvailability(date = getTodayDateString(), db: Reservati
     reserved,
     available,
     dayLabel: getDateDayLabel(dateString),
-    enabledDayIndexes: settings.enabledDayIndexes,
+    enabledDateStrings: weekSettings.enabledDateStrings,
     isHabitualOpenDay: isReservationDayEnabled,
     isReservationDayEnabled,
+    weekDays: weekSettings.days,
+    weekEndDate: weekSettings.weekEndDate,
+    weekStartDate: weekSettings.weekStartDate,
   };
 }
 
@@ -346,6 +336,24 @@ function assertReservationDateEnabled(availability: Availability) {
     throw new ReservationError(
       "reservation_day_disabled",
       "Ese día no está habilitado para reservas. Elegí un día disponible.",
+      400,
+    );
+  }
+}
+
+export function assertCurrentWeekReservationDate(date: string) {
+  const dateString = parseDateString(date);
+  const today = getTodayDateString();
+  const { end, start } = getWeekBounds(today);
+
+  if (dateString < today) {
+    throw new ReservationError("past_date", "No se pueden hacer reservas en fechas pasadas.", 400);
+  }
+
+  if (dateString < start || dateString > end) {
+    throw new ReservationError(
+      "outside_current_week",
+      "Solo se pueden hacer reservas dentro de la semana actual.",
       400,
     );
   }
@@ -407,6 +415,9 @@ export async function createAuthenticatedReservation(
   if (!context.userId || !context.userEmail) {
     throw new ReservationError("unauthorized", "Necesitas iniciar sesion con Google para reservar.", 401);
   }
+
+  await assertEmailCanReserve(context.userEmail);
+  assertCurrentWeekReservationDate(reservationInput.date);
 
   return withSerializableRetry(async () =>
     prisma.$transaction(
@@ -761,60 +772,98 @@ function getDayOfWeek(date: string) {
   return dateToDatabaseValue(date).getUTCDay();
 }
 
+function getDateEnabledState(date: string, dayCapacity: ReservationDayCapacityRecord | null) {
+  return dayCapacity?.enabled ?? DEFAULT_ENABLED_RESERVATION_DAYS.has(getDayOfWeek(date));
+}
+
+function getWeekBounds(value: string) {
+  const date = dateToDatabaseValue(value);
+  const day = date.getUTCDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  const start = new Date(date);
+  start.setUTCDate(date.getUTCDate() + offset);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+
+  return {
+    end: end.toISOString().slice(0, 10),
+    start: start.toISOString().slice(0, 10),
+  };
+}
+
+function getDateRange(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  let current = startDate;
+
+  while (current <= endDate && dates.length < 14) {
+    dates.push(current);
+    current = shiftDateString(current, 1);
+  }
+
+  return dates;
+}
+
+function shiftDateString(value: string, days: number) {
+  const date = dateToDatabaseValue(value);
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return date.toISOString().slice(0, 10);
+}
+
+async function getReservationWeekAvailability(referenceDate = getTodayDateString(), db: ReservationDb = prisma): Promise<ReservationSettingsView> {
+  const { end, start } = getWeekBounds(parseDateString(referenceDate));
+  const today = getTodayDateString();
+  const dates = getDateRange(start, end);
+  const [reservations, capacities] = await Promise.all([
+    db.reservation.groupBy({
+      by: ["date"],
+      _sum: { people: true },
+      where: {
+        date: {
+          gte: dateToDatabaseValue(start),
+          lte: dateToDatabaseValue(end),
+        },
+        status: "confirmed",
+      },
+    }),
+    findReservationDayCapacities(db, start, end),
+  ]);
+  const reservedByDate = new Map(reservations.map((row) => [databaseDateToString(row.date), row._sum.people ?? 0]));
+  const capacityByDate = new Map(capacities.map((row) => [databaseDateToString(row.date), row]));
+  const days = dates.map((date) => {
+    const dayCapacity = capacityByDate.get(date) ?? null;
+    const enabled = getDateEnabledState(date, dayCapacity);
+    const capacity = enabled ? dayCapacity?.capacity ?? DEFAULT_RESERVATION_CAPACITY : 0;
+    const reserved = reservedByDate.get(date) ?? 0;
+    const available = Math.max(capacity - reserved, 0);
+    const isPast = date < today;
+    const isFull = enabled && available <= 0;
+
+    return {
+      available,
+      capacity,
+      date,
+      dayLabel: getDateDayLabel(date),
+      dayOfWeek: getDayOfWeek(date),
+      enabled,
+      isFull,
+      isPast,
+      reserved,
+      selectable: enabled && !isPast && !isFull,
+    };
+  });
+
+  return {
+    days,
+    enabledDateStrings: days.filter((day) => day.selectable).map((day) => day.date),
+    updatedAt: null,
+    weekEndDate: end,
+    weekStartDate: start,
+  };
+}
+
 function getReservationDayCapacityDelegate(db: ReservationDb) {
   return (db as ReservationDb & { reservationDayCapacity?: ReservationDayCapacityDelegate }).reservationDayCapacity;
-}
-
-function getEnabledReservationDayDelegate(db: ReservationDb) {
-  return (db as ReservationDb & { enabledReservationDay?: EnabledReservationDayDelegate }).enabledReservationDay;
-}
-
-async function findEnabledReservationDays(db: ReservationDb) {
-  const delegate = getEnabledReservationDayDelegate(db);
-
-  if (delegate) {
-    return delegate.findMany({
-      orderBy: { dayOfWeek: "asc" },
-      select: { dayOfWeek: true, enabled: true, updatedAt: true },
-    });
-  }
-
-  return db.$queryRaw<EnabledReservationDayRecord[]>`
-    SELECT "dayOfWeek", "enabled", "updatedAt"
-    FROM "EnabledReservationDay"
-    ORDER BY "dayOfWeek" ASC
-  `;
-}
-
-async function upsertEnabledReservationDay(dayOfWeek: number, enabled: boolean) {
-  const delegate = getEnabledReservationDayDelegate(prisma);
-
-  if (delegate) {
-    return delegate.upsert({
-      create: {
-        dayOfWeek,
-        enabled,
-      },
-      select: { dayOfWeek: true, enabled: true, updatedAt: true },
-      update: {
-        enabled,
-      },
-      where: {
-        dayOfWeek,
-      },
-    });
-  }
-
-  const rows = await prisma.$queryRaw<EnabledReservationDayRecord[]>`
-    INSERT INTO "EnabledReservationDay" ("dayOfWeek", "enabled")
-    VALUES (${dayOfWeek}, ${enabled})
-    ON CONFLICT ("dayOfWeek") DO UPDATE
-      SET "enabled" = EXCLUDED."enabled",
-          "updatedAt" = CURRENT_TIMESTAMP
-    RETURNING "dayOfWeek", "enabled", "updatedAt"
-  `;
-
-  return rows[0] ?? { dayOfWeek, enabled, updatedAt: new Date() };
 }
 
 async function findReservationDayCapacity(db: ReservationDb, date: string) {
@@ -823,19 +872,46 @@ async function findReservationDayCapacity(db: ReservationDb, date: string) {
 
   if (delegate) {
     return delegate.findUnique({
-      select: { capacity: true },
+      select: { capacity: true, enabled: true },
       where: { date: dateValue },
     });
   }
 
   const rows = await db.$queryRaw<ReservationDayCapacityRecord[]>`
-    SELECT "capacity"
+    SELECT "capacity", "enabled"
     FROM "ReservationDayCapacity"
     WHERE "date" = ${dateValue}
     LIMIT 1
   `;
 
   return rows[0] ?? null;
+}
+
+async function findReservationDayCapacities(db: ReservationDb, startDate: string, endDate: string) {
+  const delegate = getReservationDayCapacityDelegate(db);
+  const startValue = dateToDatabaseValue(startDate);
+  const endValue = dateToDatabaseValue(endDate);
+
+  if (delegate) {
+    return delegate.findMany({
+      orderBy: { date: "asc" },
+      select: { capacity: true, date: true, enabled: true },
+      where: {
+        date: {
+          gte: startValue,
+          lte: endValue,
+        },
+      },
+    });
+  }
+
+  return db.$queryRaw<(ReservationDayCapacityRecord & { date: Date })[]>`
+    SELECT "date", "capacity", "enabled"
+    FROM "ReservationDayCapacity"
+    WHERE "date" >= ${startValue}
+      AND "date" <= ${endValue}
+    ORDER BY "date" ASC
+  `;
 }
 
 async function upsertReservationDayCapacity(date: string, capacity: number) {
@@ -848,7 +924,7 @@ async function upsertReservationDayCapacity(date: string, capacity: number) {
         capacity,
         date: dateValue,
       },
-      select: { capacity: true },
+      select: { capacity: true, enabled: true },
       update: {
         capacity,
       },
@@ -864,10 +940,42 @@ async function upsertReservationDayCapacity(date: string, capacity: number) {
     ON CONFLICT ("date") DO UPDATE
       SET "capacity" = EXCLUDED."capacity",
           "updatedAt" = CURRENT_TIMESTAMP
-    RETURNING "capacity"
+    RETURNING "capacity", "enabled"
   `;
 
-  return rows[0] ?? { capacity };
+  return rows[0] ?? { capacity, enabled: null };
+}
+
+async function upsertReservationDateEnabled(date: string, enabled: boolean) {
+  const dateValue = dateToDatabaseValue(date);
+  const delegate = getReservationDayCapacityDelegate(prisma);
+
+  if (delegate) {
+    return delegate.upsert({
+      create: {
+        date: dateValue,
+        enabled,
+      },
+      select: { capacity: true, enabled: true },
+      update: {
+        enabled,
+      },
+      where: {
+        date: dateValue,
+      },
+    });
+  }
+
+  const rows = await prisma.$queryRaw<ReservationDayCapacityRecord[]>`
+    INSERT INTO "ReservationDayCapacity" ("date", "enabled")
+    VALUES (${dateValue}, ${enabled})
+    ON CONFLICT ("date") DO UPDATE
+      SET "enabled" = EXCLUDED."enabled",
+          "updatedAt" = CURRENT_TIMESTAMP
+    RETURNING "capacity", "enabled"
+  `;
+
+  return rows[0] ?? { capacity: DEFAULT_RESERVATION_CAPACITY, enabled };
 }
 
 function getArgentinaDayBounds(date = getTodayDateString()) {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { listHomeGalleryImages } from "../lib/home-gallery";
 import { RusticPubLanding } from "./components/RusticPubLanding";
 
 export const metadata: Metadata = {
@@ -9,6 +10,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Home() {
-  return <RusticPubLanding />;
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const homeGallery = await listHomeGalleryImages();
+
+  return <RusticPubLanding homeGallery={homeGallery} />;
 }

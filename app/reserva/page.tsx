@@ -14,18 +14,21 @@ export const metadata: Metadata = {
 };
 
 const fallbackDate = getTodayDateString();
-const fallbackEnabledDayIndexes = [0, 4, 5, 6];
 const fallbackIsReservationDayEnabled = isReservationDayEnabled(fallbackDate);
 const fallbackCapacity = fallbackIsReservationDayEnabled ? 40 : 0;
+const fallbackWeek = getFallbackWeek(fallbackDate);
 const fallbackAvailability: Availability = {
   capacity: fallbackCapacity,
   date: fallbackDate,
   reserved: 0,
   available: fallbackCapacity,
   dayLabel: fallbackDayLabel(fallbackDate),
-  enabledDayIndexes: fallbackEnabledDayIndexes,
+  enabledDateStrings: fallbackWeek.days.filter((day) => day.selectable).map((day) => day.date),
   isHabitualOpenDay: fallbackIsReservationDayEnabled,
   isReservationDayEnabled: fallbackIsReservationDayEnabled,
+  weekDays: fallbackWeek.days,
+  weekEndDate: fallbackWeek.end,
+  weekStartDate: fallbackWeek.start,
 };
 
 export default async function ReservaPage() {
@@ -71,5 +74,50 @@ function fallbackDayLabel(value: string) {
 function isReservationDayEnabled(value: string) {
   const day = new Date(`${value}T00:00:00.000Z`).getUTCDay();
 
-  return fallbackEnabledDayIndexes.includes(day);
+  return day === 0 || day === 5 || day === 6;
+}
+
+function getFallbackWeek(value: string) {
+  const start = getWeekStart(value);
+  const dates = Array.from({ length: 7 }, (_, index) => shiftDateString(start, index));
+  const days = dates.map((date) => {
+    const enabled = isReservationDayEnabled(date);
+    const capacity = enabled ? 40 : 0;
+    const isPast = date < value;
+
+    return {
+      available: capacity,
+      capacity,
+      date,
+      dayOfWeek: new Date(`${date}T00:00:00.000Z`).getUTCDay(),
+      dayLabel: fallbackDayLabel(date),
+      enabled,
+      isFull: false,
+      isPast,
+      reserved: 0,
+      selectable: enabled && !isPast,
+    };
+  });
+
+  return {
+    days,
+    end: dates[6],
+    start,
+  };
+}
+
+function getWeekStart(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  const day = date.getUTCDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + offset);
+
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftDateString(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return date.toISOString().slice(0, 10);
 }
